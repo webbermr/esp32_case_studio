@@ -42,12 +42,38 @@ export function boardExtents(device: Device) {
 export function computeLayout(device: Device, s: CaseSettings): CaseLayout {
   const b = device.board;
   const e = boardExtents(device);
-  const innerLength = e.maxX - e.minX + 2 * s.clearance;
-  const innerWidth = e.maxY - e.minY + 2 * s.clearance;
   // The PCB must clear anything hanging off its underside.
   const standoff = Math.max(s.standoff, b.heightBelow + 0.5);
   const boardTopZ = s.floor + standoff + b.thickness;
-  const baseHeight = boardTopZ + b.heightAbove + s.topClearance;
+  let baseHeight = boardTopZ + b.heightAbove + s.topClearance;
+
+  // Button plungers need room between the button and the wall for their
+  // retaining collar. Grow the cavity (or raise the lid) where they don't fit.
+  for (const f of device.features) {
+    if (!usesActuator(f) || f.kind !== 'button') continue;
+    const need = plungerDims(f).need;
+    const [sx, sy, sz] = f.size;
+    switch (f.side) {
+      case 'top':
+        baseHeight = Math.max(baseHeight, boardTopZ + f.z + sz / 2 + need);
+        break;
+      case 'left':
+        e.minX = Math.min(e.minX, f.x - sx / 2 - (need - s.clearance));
+        break;
+      case 'right':
+        e.maxX = Math.max(e.maxX, f.x + sx / 2 + (need - s.clearance));
+        break;
+      case 'front':
+        e.minY = Math.min(e.minY, f.y - sy / 2 - (need - s.clearance));
+        break;
+      case 'back':
+        e.maxY = Math.max(e.maxY, f.y + sy / 2 + (need - s.clearance));
+        break;
+    }
+  }
+
+  const innerLength = e.maxX - e.minX + 2 * s.clearance;
+  const innerWidth = e.maxY - e.minY + 2 * s.clearance;
   return {
     innerLength,
     innerWidth,
@@ -132,6 +158,16 @@ class Scope {
     if (axis === 'x') m = this.keep(m.rotate([0, 90, 0]));
     if (axis === 'y') m = this.keep(m.rotate([90, 0, 0]));
     return this.keep(m.translate([cx, cy, cz]));
+  }
+
+  /** Cylinder/cone along +Z from z0 to z1 (radii r0 at z0, r1 at z1). */
+  cone(z0: number, z1: number, r0: number, r1 = r0): Manifold {
+    const m = this.keep(this.k.Manifold.cylinder(z1 - z0, r0, r1, 48, false));
+    return this.keep(m.translate([0, 0, z0]));
+  }
+
+  transform(m: Manifold, mat: THREE.Matrix4): Manifold {
+    return this.keep(m.transform(mat.elements as unknown as Parameters<Manifold['transform']>[0]));
   }
 
   add(a: Manifold, b: Manifold): Manifold {
@@ -224,6 +260,189 @@ function sideCutter(S: Scope, f: Feature, s: CaseSettings, L: CaseLayout): Manif
 }
 
 // ---------------------------------------------------------------------------
+// Printed actuators: button plungers and slide-switch caps
+
+/** Radial clearance between a plunger and its hole. */
+const PLUNGER_CLEARANCE = 0.3;
+/** Gap between the plunger tip and the button at rest. */
+const REST_GAP = 0.2;
+/** Gap between the collar and the wall: how far the plunger can be pushed. */
+const TRAVEL_GAP = 0.5;
+const COLLAR_FLAT = 0.8;
+/** Collar overhang; chamfered at 45° so it prints without supports. */
+const COLLAR_STEP = 1.2;
+/** How far a plunger or switch cap sticks out of the case. */
+const PROTRUDE = 1.2;
+const CAP_WALL = 1.0;
+const POCKET_CLEARANCE = 0.15;
+const SLOT_CLEARANCE = 0.25;
+
+export const DEFAULT_TRAVEL = 2;
+export const DEFAULT_LEVER: [number, number, number] = [1.5, 1.5, 1.5];
+
+export function usesActuator(f: Feature): boolean {
+  return f.cutout && (f.kind === 'button' || f.kind === 'switch') && f.actuator !== false;
+}
+
+/** The two body dimensions across the axis the part is pressed along. */
+function lateralSize(f: Feature): [number, number] {
+  const [sx, sy, sz] = f.size;
+  if (f.side === 'top' || f.side === 'bottom') return [sx, sy];
+  if (f.side === 'left' || f.side === 'right') return [sy, sz];
+  return [sx, sz];
+}
+
+export function plungerDims(f: Feature) {
+  const d = f.plungerDiameter ?? Math.min(7, Math.max(3, ...lateralSize(f)));
+  return { d, need: REST_GAP + COLLAR_FLAT + COLLAR_STEP + TRAVEL_GAP };
+}
+
+interface PartFrame {
+  /** local X = slide direction, local Y = height, local Z = outward normal */
+  matrix: THREE.Matrix4;
+  /** Distance along the normal from the part's face to the inside of the wall/lid. */
+  inner: number;
+  /** ...and to the outside surface. */
+  outer: number;
+  wallName: string;
+}
+
+function partFrame(f: Feature, s: CaseSettings, L: CaseLayout): PartFrame {
+  const o = L.boardOrigin;
+  const c = new THREE.Vector3(o.x + f.x, o.y + f.y, L.boardTopZ + f.z);
+  const [sx, sy, sz] = f.size;
+  const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  let t: THREE.Vector3, w: THREE.Vector3, n: THREE.Vector3, face: THREE.Vector3;
+  let inner: number, outer: number, wallName: string;
+  switch (f.side) {
+    case 'top':
+      [t, w, n] = [V(1, 0, 0), V(0, 1, 0), V(0, 0, 1)];
+      face = c.clone().setZ(c.z + sz / 2);
+      inner = L.baseHeight - face.z;
+      outer = L.totalHeight - face.z;
+      wallName = 'lid';
+      break;
+    case 'bottom':
+      [t, w, n] = [V(1, 0, 0), V(0, -1, 0), V(0, 0, -1)];
+      face = c.clone().setZ(c.z - sz / 2);
+      inner = face.z - s.floor;
+      outer = face.z;
+      wallName = 'floor';
+      break;
+    case 'left':
+      [t, w, n] = [V(0, 1, 0), V(0, 0, -1), V(-1, 0, 0)];
+      face = c.clone().setX(c.x - sx / 2);
+      inner = face.x - s.wall;
+      outer = face.x;
+      wallName = 'left wall';
+      break;
+    case 'right':
+      [t, w, n] = [V(0, 1, 0), V(0, 0, 1), V(1, 0, 0)];
+      face = c.clone().setX(c.x + sx / 2);
+      inner = L.outerLength - s.wall - face.x;
+      outer = L.outerLength - face.x;
+      wallName = 'right wall';
+      break;
+    case 'front':
+      [t, w, n] = [V(1, 0, 0), V(0, 0, 1), V(0, -1, 0)];
+      face = c.clone().setY(c.y - sy / 2);
+      inner = face.y - s.wall;
+      outer = face.y;
+      wallName = 'front wall';
+      break;
+    default:
+      [t, w, n] = [V(1, 0, 0), V(0, 0, -1), V(0, 1, 0)];
+      face = c.clone().setY(c.y + sy / 2);
+      inner = L.outerWidth - s.wall - face.y;
+      outer = L.outerWidth - face.y;
+      wallName = 'back wall';
+  }
+  const matrix = new THREE.Matrix4().makeBasis(t, w, n).setPosition(face);
+  return { matrix, inner, outer, wallName };
+}
+
+export interface Actuator {
+  featureId: string;
+  label: string;
+  type: 'plunger' | 'slider';
+  /** In case coordinates, assembled. */
+  geometry: THREE.BufferGeometry;
+  /** Same part laid flat on the bed for printing. */
+  print: THREE.BufferGeometry;
+  /** Lives in the lid (moves with it in the exploded view). */
+  inLid: boolean;
+}
+
+interface ActuatorPlan {
+  part: Manifold;
+  cutter: Manifold;
+  type: Actuator['type'];
+  warning?: string;
+}
+
+function planActuator(S: Scope, f: Feature, s: CaseSettings, L: CaseLayout): ActuatorPlan | { warning: string } {
+  const fr = partFrame(f, s, L);
+
+  if (f.kind === 'button') {
+    const { d } = plungerDims(f);
+    const r = d / 2;
+    const collarTop = fr.inner - TRAVEL_GAP;
+    let flat = COLLAR_FLAT;
+    let step = COLLAR_STEP;
+    const avail = collarTop - REST_GAP;
+    if (avail < flat + step) {
+      step = Math.min(step, avail - 0.4);
+      flat = avail - step;
+    }
+    if (step < 0.4) {
+      return {
+        warning: `${f.label}: not enough room between the button and the ${fr.wallName} for a plunger; using a plain hole.`,
+      };
+    }
+    const collarBottom = collarTop - flat - step;
+    const local = S.union([
+      S.cone(REST_GAP, fr.outer + PROTRUDE, r),
+      S.cone(collarBottom, collarBottom + flat, r + step),
+      S.cone(collarBottom + flat, collarTop, r + step, r),
+    ]);
+    const hole = S.cone(fr.inner - 0.6, fr.outer + 1, r + PLUNGER_CLEARANCE);
+    return { part: S.transform(local, fr.matrix), cutter: S.transform(hole, fr.matrix), type: 'plunger' };
+  }
+
+  // Slide switch: a cap that pushes onto the lever and pokes out through a slot.
+  const [lw, lh, ll] = f.leverSize ?? DEFAULT_LEVER;
+  const travel = f.switchTravel ?? DEFAULT_TRAVEL;
+  const pw = lw + 2 * POCKET_CLEARANCE;
+  const ph = lh + 2 * POCKET_CLEARANCE;
+  const cw = pw + 2 * CAP_WALL;
+  const ch = ph + 2 * CAP_WALL;
+  const capStart = 0.3; // leave a gap to the switch body
+  const capEnd = fr.outer + PROTRUDE + 0.8;
+  const cap = S.sub(
+    S.box(0, 0, (capStart + capEnd) / 2, cw, ch, capEnd - capStart),
+    S.box(0, 0, (capStart - 1 + ll) / 2, pw, ph, ll - capStart + 1 + 0.01),
+  );
+  const slotLen = cw + travel + 2 * SLOT_CLEARANCE;
+  const slotH = ch + 2 * SLOT_CLEARANCE;
+  const slotDepth = fr.outer - fr.inner + 2;
+  const slot = S.box(0, 0, fr.inner + slotDepth / 2 - 1, slotLen, slotH, slotDepth);
+  return { part: S.transform(cap, fr.matrix), cutter: S.transform(slot, fr.matrix), type: 'slider' };
+}
+
+/** Stand a part on its outer end so it prints without supports. */
+function printOrientation(g: THREE.BufferGeometry, f: Feature, s: CaseSettings, L: CaseLayout): THREE.BufferGeometry {
+  const fr = partFrame(f, s, L);
+  const p = g.clone();
+  // Back to the part's local frame (outward = +Z), then flip so outward faces the bed.
+  p.applyMatrix4(fr.matrix.clone().invert());
+  p.rotateX(Math.PI);
+  p.computeBoundingBox();
+  const bb = p.boundingBox!;
+  p.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -bb.min.z);
+  return p;
+}
+
+// ---------------------------------------------------------------------------
 // Parts
 
 export interface CaseParts {
@@ -231,6 +450,8 @@ export interface CaseParts {
   deviceId: string;
   base: THREE.BufferGeometry;
   lid: THREE.BufferGeometry;
+  actuators: Actuator[];
+  warnings: string[];
   layout: CaseLayout;
 }
 
@@ -246,8 +467,20 @@ export function buildCase(device: Device, s: CaseSettings): CaseParts {
 
 function buildWith(S: Scope, device: Device, s: CaseSettings): CaseParts {
   const L = computeLayout(device, s);
-  const cut = device.features.filter((f) => f.cutout);
   const o = L.boardOrigin;
+  const warnings: string[] = [];
+
+  // Buttons/switches with a printed actuator get the actuator's hole or slot
+  // instead of the plain cut-out.
+  const actuatorPlans = new Map<string, ActuatorPlan>();
+  for (const f of device.features) {
+    if (!usesActuator(f)) continue;
+    const plan = planActuator(S, f, s, L);
+    if ('part' in plan) actuatorPlans.set(f.id, plan);
+    if (plan.warning) warnings.push(plan.warning);
+  }
+  const cutterFor = (f: Feature) => actuatorPlans.get(f.id)?.cutter ?? sideCutter(S, f, s, L);
+  const cut = device.features.filter((f) => f.cutout);
   const innerR = Math.max(0.2, s.cornerRadius - s.wall);
   const outline = S.roundedRect(0, 0, L.outerLength, L.outerWidth, s.cornerRadius);
 
@@ -282,7 +515,7 @@ function buildWith(S: Scope, device: Device, s: CaseSettings): CaseParts {
   }
   base = S.union([base, ...supports]);
 
-  const baseCuts = [...holes, ...cut.filter((f) => f.side !== 'top').map((f) => sideCutter(S, f, s, L))];
+  const baseCuts = [...holes, ...cut.filter((f) => f.side !== 'top').map(cutterFor)];
   if (baseCuts.length) base = S.sub(base, S.union(baseCuts));
 
   // ---- Lid: plate + locating lip that drops inside the walls
@@ -304,7 +537,7 @@ function buildWith(S: Scope, device: Device, s: CaseSettings): CaseParts {
     lid = S.add(lid, S.extrude(ring, L.baseHeight - s.lipHeight, L.baseHeight + Math.min(0.5, s.lidThickness / 2)));
   }
 
-  const lidCuts = cut.filter((f) => f.side !== 'bottom').map((f) => sideCutter(S, f, s, L));
+  const lidCuts = cut.filter((f) => f.side !== 'bottom').map(cutterFor);
   if (s.ventSlots > 0) {
     const pitch = 4;
     const span = (s.ventSlots - 1) * pitch;
@@ -317,7 +550,29 @@ function buildWith(S: Scope, device: Device, s: CaseSettings): CaseParts {
   }
   if (lidCuts.length) lid = S.sub(lid, S.union(lidCuts));
 
-  return { deviceId: device.id, base: S.toGeometry(base), lid: S.toGeometry(lid), layout: L };
+  const actuators: Actuator[] = [];
+  for (const f of device.features) {
+    const plan = actuatorPlans.get(f.id);
+    if (!plan) continue;
+    const geometry = S.toGeometry(plan.part);
+    actuators.push({
+      featureId: f.id,
+      label: f.label,
+      type: plan.type,
+      geometry,
+      print: printOrientation(geometry, f, s, L),
+      inLid: f.side === 'top',
+    });
+  }
+
+  return {
+    deviceId: device.id,
+    base: S.toGeometry(base),
+    lid: S.toGeometry(lid),
+    actuators,
+    warnings,
+    layout: L,
+  };
 }
 
 /** Rotate the lid upside down so its flat top sits on the print bed. */

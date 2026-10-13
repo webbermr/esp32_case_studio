@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { CaseLayout } from '../lib/caseGeometry';
-import { cutoutSize } from '../lib/caseGeometry';
+import { cutoutSize, DEFAULT_LEVER, DEFAULT_TRAVEL, plungerDims, usesActuator } from '../lib/caseGeometry';
 import { KIND_COLORS } from '../lib/boardModel';
 import type { CaseSettings, Device, Feature, FeatureKind, Side } from '../types';
 import { NumberField } from './NumberField';
@@ -157,7 +157,13 @@ export function SpecPanel({ device, settings, layout, edited, onDevice, onSettin
                   </button>
                   <span className="f-side">{f.side}</span>
                   <span className="f-size">
-                    {f.cutout ? `${c.w.toFixed(1)}×${c.h.toFixed(1)}` : '—'}
+                    {!f.cutout
+                      ? '—'
+                      : usesActuator(f)
+                        ? f.kind === 'button'
+                          ? `plunger Ø${plungerDims(f).d.toFixed(1)}`
+                          : 'slider cap'
+                        : `${c.w.toFixed(1)}×${c.h.toFixed(1)}`}
                   </span>
                 </div>
                 {isOpen && (
@@ -201,6 +207,74 @@ export function SpecPanel({ device, settings, layout, edited, onDevice, onSettin
                       <NumberField label="Size Y" value={f.size[1]} min={0.1} onChange={(v) => setFeature(f.id, { size: [f.size[0], v, f.size[2]] })} />
                       <NumberField label="Size Z" value={f.size[2]} min={0.1} onChange={(v) => setFeature(f.id, { size: [f.size[0], f.size[1], v] })} />
                     </div>
+                    {(f.kind === 'button' || f.kind === 'switch') && (
+                      <div className="actuator-box">
+                        <label className="check">
+                          <input
+                            type="checkbox"
+                            checked={f.actuator !== false}
+                            disabled={!f.cutout}
+                            onChange={(e) => setFeature(f.id, { actuator: e.target.checked })}
+                          />
+                          <span>
+                            {f.kind === 'button'
+                              ? 'Print a plunger to press this button'
+                              : 'Print a cap that slides this switch'}
+                          </span>
+                        </label>
+                        {usesActuator(f) && f.kind === 'button' && (
+                          <div className="grid2">
+                            <NumberField
+                              label="Plunger Ø"
+                              value={plungerDims(f).d}
+                              min={2}
+                              onChange={(v) => setFeature(f.id, { plungerDiameter: v })}
+                            />
+                          </div>
+                        )}
+                        {usesActuator(f) && f.kind === 'switch' && (
+                          <div className="grid2">
+                            <NumberField
+                              label="Switch travel"
+                              value={f.switchTravel ?? DEFAULT_TRAVEL}
+                              min={0.5}
+                              onChange={(v) => setFeature(f.id, { switchTravel: v })}
+                            />
+                            <NumberField
+                              label="Lever sticks out"
+                              value={(f.leverSize ?? DEFAULT_LEVER)[2]}
+                              min={0.5}
+                              onChange={(v) => setFeature(f.id, { leverSize: [...(f.leverSize ?? DEFAULT_LEVER).slice(0, 2), v] as [number, number, number] })}
+                            />
+                            <NumberField
+                              label="Lever width"
+                              value={(f.leverSize ?? DEFAULT_LEVER)[0]}
+                              min={0.5}
+                              onChange={(v) => {
+                                const l = f.leverSize ?? DEFAULT_LEVER;
+                                setFeature(f.id, { leverSize: [v, l[1], l[2]] });
+                              }}
+                            />
+                            <NumberField
+                              label="Lever height"
+                              value={(f.leverSize ?? DEFAULT_LEVER)[1]}
+                              min={0.5}
+                              onChange={(v) => {
+                                const l = f.leverSize ?? DEFAULT_LEVER;
+                                setFeature(f.id, { leverSize: [l[0], v, l[2]] });
+                              }}
+                            />
+                          </div>
+                        )}
+                        {usesActuator(f) && (
+                          <p className="help">
+                            {f.kind === 'button'
+                              ? 'A collar on the inside keeps the plunger from falling out. Fit it into its hole from inside before the board and lid go in.'
+                              : 'Push the cap onto the lever through the slot after the board is in. Measure the lever: these are typical values.'}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {f.note && <p className="help">{f.note}</p>}
                     <button
                       className="link-btn danger"

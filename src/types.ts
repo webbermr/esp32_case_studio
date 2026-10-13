@@ -43,6 +43,17 @@ export interface Feature {
   cutout: boolean;
   shape?: 'rect' | 'circle';
   note?: string;
+  /**
+   * Buttons and switches with a cut-out get a printed actuator (button plunger
+   * or slide-switch cap) unless this is false.
+   */
+  actuator?: boolean;
+  /** Plunger shaft diameter for buttons. Default: derived from the button size. */
+  plungerDiameter?: number;
+  /** Slide-switch lever travel, end to end. Default 2 mm. */
+  switchTravel?: number;
+  /** Slide-switch lever: [width along slide, height, protrusion from body]. Default [1.5, 1.5, 1.5]. */
+  leverSize?: [number, number, number];
 }
 
 export interface MountingHole {

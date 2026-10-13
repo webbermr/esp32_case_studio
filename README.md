@@ -38,6 +38,17 @@ Things to know:
 
 The code is in `server/lookup.ts` (prompts, schema, API calls) and `server/plugin.ts` (the `/api/*` endpoints and cache).
 
+## Printed buttons and switches
+
+Every button and slide switch with a cut-out gets a small printed part by default. You can turn this off per part in the left panel.
+
+- **Button plunger:** a pin that runs through the lid (or wall) and presses the board's button. A chamfered collar on the inside stops it falling out, and leaves about 0.5 mm of travel. The case automatically gets taller (top buttons) or wider (side buttons) to fit the collar.
+- **Slide-switch cap:** pushes onto the switch lever and sticks out through a slot as long as the switch's travel. The lever size and travel are typical values (1.5 mm lever, 2 mm travel), so measure yours and adjust them.
+
+The parts are included in **Download STL**, or you can download them alone with **Buttons**. They're oriented to print without supports, outer end down.
+
+Tips: print the plungers in PETG or PLA at 0.12–0.16 mm layers. If a plunger binds, sand it lightly or raise its diameter clearance by printing the case with a slightly bigger **Plunger Ø** gap. If the switch cap is loose on the lever, lower **Lever width/height** by 0.1 mm.
+
 ## How it works
 
 | Piece | File |

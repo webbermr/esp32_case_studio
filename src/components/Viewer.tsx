@@ -158,16 +158,23 @@ export function Viewer({ device, parts, view, highlight }: Props) {
       e.position.z = lift;
       content.add(e);
     }
+    // Printed plungers / switch caps: shown with the part they fit into.
+    const actMat = new THREE.MeshStandardMaterial({ color: '#4f9cf7', roughness: 0.45 });
+    for (const a of parts.actuators) {
+      if (!(a.inLid ? view.lid : view.base)) continue;
+      const m = new THREE.Mesh(a.geometry, a.featureId === highlight ? hiMat(actMat) : actMat);
+      if (a.inLid) m.position.z = lift;
+      m.castShadow = true;
+      content.add(m);
+    }
+
     if (view.board && parts.deviceId === device.id) {
       const board = buildBoardModel(device, L.boardOrigin);
       if (view.exploded) board.position.z += lift * 0.45;
       board.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (mesh.isMesh && highlight && mesh.userData.featureId === highlight) {
-          const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
-          mat.emissive.set('#3b82f6');
-          mat.emissiveIntensity = 0.9;
-          mesh.material = mat;
+          mesh.material = hiMat(mesh.material as THREE.MeshStandardMaterial);
         }
       });
       content.add(board);
@@ -210,6 +217,13 @@ export function Viewer({ device, parts, view, highlight }: Props) {
 }
 
 const fmt = (n: number) => n.toFixed(1);
+
+function hiMat(base: THREE.MeshStandardMaterial) {
+  const mat = base.clone();
+  mat.emissive.set('#3b82f6');
+  mat.emissiveIntensity = 0.9;
+  return mat;
+}
 
 function edges(g: THREE.BufferGeometry) {
   return new THREE.LineSegments(

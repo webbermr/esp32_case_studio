@@ -82,6 +82,10 @@ export default function App() {
         setParts((old) => {
           old?.base.dispose();
           old?.lid.dispose();
+          old?.actuators.forEach((a) => {
+            a.geometry.dispose();
+            a.print.dispose();
+          });
           return p;
         });
         setError(null);
@@ -104,12 +108,14 @@ export default function App() {
 
   const slug = device.id || 'case';
 
-  const exportPart = (which: 'base' | 'lid' | 'both') => {
+  const exportPart = (which: 'base' | 'lid' | 'actuators' | 'all') => {
     if (!parts) return;
     const lid = lidForPrinting(parts.lid);
+    const small = parts.actuators.map((a) => a.print);
     if (which === 'base') download(`${slug}-base.stl`, geometryToStl(parts.base));
     if (which === 'lid') download(`${slug}-lid.stl`, geometryToStl(lid));
-    if (which === 'both') download(`${slug}-plate.stl`, geometryToStl(layoutOnBed([parts.base, lid])));
+    if (which === 'actuators') download(`${slug}-buttons.stl`, geometryToStl(layoutOnBed(small, 4)));
+    if (which === 'all') download(`${slug}-plate.stl`, geometryToStl(layoutOnBed([parts.base, lid, ...small])));
     lid.dispose();
   };
 
@@ -187,7 +193,7 @@ export default function App() {
             ))}
           </div>
           <div className="downloads">
-            <button className="primary" disabled={!parts} onClick={() => exportPart('both')}>
+            <button className="primary" disabled={!parts} onClick={() => exportPart('all')}>
               Download STL
             </button>
             <button disabled={!parts} onClick={() => exportPart('base')}>
@@ -196,6 +202,11 @@ export default function App() {
             <button disabled={!parts} onClick={() => exportPart('lid')}>
               Lid
             </button>
+            {parts && parts.actuators.length > 0 && (
+              <button onClick={() => exportPart('actuators')} title="Button plungers and switch caps">
+                Buttons ({parts.actuators.length})
+              </button>
+            )}
             <button onClick={exportJson}>Save spec</button>
             <button onClick={() => fileInput.current?.click()}>Load spec</button>
             <input
@@ -215,6 +226,11 @@ export default function App() {
         <div className="status">
           {(building || !kernelReady) && !error && <span className="pill">{kernelReady ? 'Rebuilding…' : 'Loading geometry engine…'}</span>}
           {error && <span className="pill err">{error}</span>}
+          {parts?.warnings.map((w) => (
+            <span key={w} className="pill warn">
+              {w}
+            </span>
+          ))}
           <span className="hint">Drag to rotate · right-drag to pan · scroll to zoom</span>
         </div>
       </main>

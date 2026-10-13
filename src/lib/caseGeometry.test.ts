@@ -59,6 +59,12 @@ describe('buildCase', () => {
       // Every edge must be shared by exactly two triangles: watertight and printable.
       expect(openEdges(parts.base)).toBe(0);
       expect(openEdges(parts.lid)).toBe(0);
+      for (const a of parts.actuators) {
+        expect(openEdges(a.geometry), a.label).toBe(0);
+        expect(volume(a.geometry), a.label).toBeGreaterThan(0);
+        a.print.computeBoundingBox();
+        expect(a.print.boundingBox!.min.z).toBeCloseTo(0, 3);
+      }
     });
   }
 
@@ -67,6 +73,46 @@ describe('buildCase', () => {
     const L = computeLayout(devkit, DEFAULT_SETTINGS);
     // 48.26 PCB + 6.04 antenna overhang (Espressif drawing)
     expect(L.innerLength - 2 * DEFAULT_SETTINGS.clearance).toBeCloseTo(54.3, 1);
+  });
+
+  it('sizes a top button plunger to pass through the lid', () => {
+    const pico = DEVICES.find((d) => d.id === 'rpi-pico')!;
+    const parts = buildCase(pico, DEFAULT_SETTINGS);
+    expect(parts.warnings).toEqual([]);
+    const plunger = parts.actuators.find((a) => a.featureId === 'bootsel')!;
+    expect(plunger.type).toBe('plunger');
+    plunger.geometry.computeBoundingBox();
+    const bb = plunger.geometry.boundingBox!;
+    const L = parts.layout;
+    const btn = pico.features.find((f) => f.id === 'bootsel')!;
+    // Sticks out of the lid, and its tip rests just above the button.
+    expect(bb.max.z).toBeCloseTo(L.totalHeight + 1.2, 2);
+    expect(bb.min.z).toBeCloseTo(L.boardTopZ + btn.z + btn.size[2] / 2 + 0.2, 2);
+  });
+
+  it('makes room for a side button plunger and a slide-switch slot', () => {
+    const t3 = DEVICES.find((d) => d.id === 'lilygo-t3-v1-6-1')!;
+    const parts = buildCase(t3, DEFAULT_SETTINGS);
+    expect(parts.warnings).toEqual([]);
+    const slider = parts.actuators.find((a) => a.featureId === 'pwr')!;
+    expect(slider.type).toBe('slider');
+    slider.geometry.computeBoundingBox();
+    // Front wall is at y = 0; the cap must poke out past it.
+    expect(slider.geometry.boundingBox!.min.y).toBeLessThan(0);
+
+    const d1 = DEVICES.find((d) => d.id === 'lolin-d1-mini-v4')!;
+    const withPlunger = computeLayout(d1, DEFAULT_SETTINGS);
+    const without = computeLayout(
+      { ...d1, features: d1.features.map((f) => ({ ...f, actuator: false })) },
+      DEFAULT_SETTINGS,
+    );
+    expect(withPlunger.outerWidth).toBeGreaterThan(without.outerWidth);
+  });
+
+  it('skips actuators when switched off', () => {
+    const pico = DEVICES.find((d) => d.id === 'rpi-pico')!;
+    const off = { ...pico, features: pico.features.map((f) => ({ ...f, actuator: false })) };
+    expect(buildCase(off, DEFAULT_SETTINGS).actuators).toEqual([]);
   });
 
   it('keeps the PCB above parts on its underside', () => {
