@@ -7,9 +7,11 @@ interface Props {
   selectedId: string;
   onSelect: (d: Device) => void;
   onCustom: () => void;
+  /** Present when online lookup is available. */
+  onLookup?: (query: string) => void;
 }
 
-export function SearchBox({ devices, selectedId, onSelect, onCustom }: Props) {
+export function SearchBox({ devices, selectedId, onSelect, onCustom, onLookup }: Props) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -46,6 +48,10 @@ export function SearchBox({ devices, selectedId, onSelect, onCustom }: Props) {
             setActive((a) => Math.max(a - 1, 0));
           } else if (e.key === 'Enter' && results[active]) {
             choose(results[active]);
+          } else if (e.key === 'Enter' && onLookup && query.trim()) {
+            onLookup(query.trim());
+            setQuery('');
+            setOpen(false);
           } else if (e.key === 'Escape') {
             setOpen(false);
           }
@@ -74,6 +80,20 @@ export function SearchBox({ devices, selectedId, onSelect, onCustom }: Props) {
             </li>
           ))}
           {results.length === 0 && <li className="empty">No match in the library.</li>}
+          {onLookup && query.trim().length > 1 && (
+            <li
+              className="lookup"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onLookup(query.trim());
+                setQuery('');
+                setOpen(false);
+              }}
+            >
+              <span className="r-name">Look up “{query.trim()}” online</span>
+              <span className="r-meta">Claude searches manufacturer datasheets and builds a board spec (about 1–3 min)</span>
+            </li>
+          )}
           <li
             className="custom"
             onMouseDown={(e) => {

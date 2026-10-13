@@ -82,6 +82,8 @@ export interface Device {
   /** How much of the mechanical data came straight from a manufacturer drawing. */
   confidence: Confidence;
   notes?: string;
+  /** Where the entry came from. Lookups are AI-researched and need checking. */
+  origin?: 'library' | 'lookup' | 'import';
 }
 
 export interface CaseSettings {

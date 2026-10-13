@@ -15,7 +15,28 @@ npm test           # geometry tests (checks every library board produces waterti
 npm run build      # static site in dist/
 ```
 
-`dist/` is a plain static site, so it can go on GitHub Pages, Netlify, an S3 bucket or anywhere else that serves files.
+`dist/` is a plain static site, so it can go on GitHub Pages, Netlify, an S3 bucket or anywhere else that serves files. Online lookup won't work there (see below).
+
+## Looking up boards online
+
+If a board isn't in the library, type its name and choose **Look up "…" online**, or just press Enter. The local server asks Claude to find the manufacturer's datasheet or mechanical drawing on the web. It then turns what it finds into a board spec that loads straight into the editor, with source links.
+
+Setup:
+
+```bash
+cp .env.example .env     # then put your key in it
+# ANTHROPIC_API_KEY=sk-ant-...
+npm run dev
+```
+
+Things to know:
+
+- **Where it runs:** only on the local server (`npm run dev` or `npm run preview`). The key stays in `.env` on your machine and never reaches the browser. On a static deploy the option doesn't appear.
+- **Time and cost:** a lookup takes about 1–3 minutes and costs real API money, since it runs web searches plus two model calls.
+- **Caching:** results go in `lookups/boards.json` (git-ignored). Repeat searches are instant and free, and looked-up boards show up in search next time. Delete an entry from that file to re-research it.
+- **Accuracy:** looked-up boards carry an "AI-researched" warning. The research prompt asks Claude to separate numbers that are dimensioned in a source from ones it estimated, and to leave cut-outs off for undocumented parts. Even so, check the numbers against the linked sources before printing.
+
+The code is in `server/lookup.ts` (prompts, schema, API calls) and `server/plugin.ts` (the `/api/*` endpoints and cache).
 
 ## How it works
 
@@ -28,6 +49,7 @@ npm run build      # static site in dist/
 | STL export | `src/lib/exportStl.ts` |
 | 3D viewer (three.js) | `src/components/Viewer.tsx` |
 | Left-hand panel | `src/components/SpecPanel.tsx` |
+| Online lookup (Claude + web search) | `server/lookup.ts`, `server/plugin.ts` |
 
 The case is built with manifold-3d, the same CSG kernel OpenSCAD uses. Its output is always a closed, manifold mesh, so slicers don't need to repair it. A test checks that.
 

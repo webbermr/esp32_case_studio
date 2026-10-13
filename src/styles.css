@@ -90,6 +90,19 @@ button, input, select { font: inherit; color: inherit; }
 .results .r-meta { grid-column: 1; color: var(--muted); font-size: 12px; }
 .results .chip { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 .results .empty { color: var(--muted); cursor: default; display: block; }
+.results .lookup { display: block; border-top: 1px solid var(--line); margin-top: 4px; }
+.results .lookup .r-name { color: var(--accent); display: block; }
+.results .lookup .r-meta { display: block; }
+.lookup-panel { margin: 0 16px 12px; padding: 10px 12px; border-radius: var(--radius); background: #1a2430; border: 1px solid #2b4a66; font-size: 12px; }
+.lookup-panel.failed { border-color: var(--bad); background: #2a1515; }
+.lookup-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 13px; }
+.lookup-head .link-btn { margin: 0; }
+.lookup-log { list-style: none; margin: 6px 0 0; padding: 0; color: var(--muted); }
+.lookup-log li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }
+.lookup-log li:last-child { color: var(--text); }
+.lookup-log li:last-child::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; border: 2px solid var(--accent-2); border-right-color: transparent; animation: spin .8s linear infinite; vertical-align: -1px; }
+.lookup-error { margin: 6px 0 0; color: #fecaca; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .results .custom { color: var(--accent-2); display: block; border-top: 1px solid var(--line); margin-top: 4px; border-radius: 0 0 6px 6px; }
 
 .chip {

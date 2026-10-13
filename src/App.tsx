@@ -6,6 +6,7 @@ import { DEVICES, customDevice } from './data/devices';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { buildCase, initCsg, lidForPrinting, type CaseParts } from './lib/caseGeometry';
 import { download, geometryToStl, layoutOnBed } from './lib/exportStl';
+import { cachedLookups, lookupAvailable, lookupBoard, type LookupEvent } from './lib/lookupClient';
 import { DEFAULT_SETTINGS, type CaseSettings, type Device } from './types';
 
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -29,6 +30,38 @@ export default function App() {
   });
   const fileInput = useRef<HTMLInputElement>(null);
   const [kernelReady, setKernelReady] = useState(false);
+  const [canLookup, setCanLookup] = useState(false);
+  const [lookup, setLookup] = useState<{ query: string; log: LookupEvent[]; error?: string } | null>(null);
+  const lookupAbort = useRef<AbortController | null>(null);
+
+  // Lookups need the local server (npm run dev / preview) with an API key.
+  useEffect(() => {
+    lookupAvailable().then(setCanLookup);
+    cachedLookups().then((found) => {
+      if (found.length) setLibrary((lib) => [...lib, ...found.filter((d) => !lib.some((x) => x.id === d.id))]);
+    });
+  }, []);
+
+  const runLookup = async (query: string) => {
+    lookupAbort.current?.abort();
+    const ac = new AbortController();
+    lookupAbort.current = ac;
+    setLookup({ query, log: [] });
+    try {
+      const d = await lookupBoard(query, (e) => setLookup((l) => (l ? { ...l, log: [...l.log, e] } : l)), ac.signal);
+      setLibrary((lib) => [d, ...lib.filter((x) => x.id !== d.id)]);
+      selectDevice(d);
+      setLookup(null);
+    } catch (e) {
+      if (ac.signal.aborted) return;
+      setLookup((l) => (l ? { ...l, error: e instanceof Error ? e.message : String(e) } : l));
+    }
+  };
+
+  const cancelLookup = () => {
+    lookupAbort.current?.abort();
+    setLookup(null);
+  };
 
   useEffect(() => {
     initCsg(wasmUrl)
@@ -95,6 +128,7 @@ export default function App() {
       d.specs = d.specs ?? {};
       d.aliases = d.aliases ?? [];
       d.tags = d.tags ?? [];
+      d.origin = d.origin ?? 'import';
       setLibrary((lib) => [d, ...lib.filter((x) => x.id !== d.id)]);
       selectDevice(d);
       if (data.settings) setSettings({ ...DEFAULT_SETTINGS, ...data.settings });
@@ -118,7 +152,9 @@ export default function App() {
           selectedId={device.id}
           onSelect={selectDevice}
           onCustom={() => selectDevice(customDevice())}
+          onLookup={canLookup ? runLookup : undefined}
         />
+        {lookup && <LookupProgress lookup={lookup} onCancel={cancelLookup} />}
         <SpecPanel
           device={device}
           settings={settings}
@@ -183,4 +219,47 @@ export default function App() {
       </main>
     </div>
   );
+}
+
+function LookupProgress({
+  lookup,
+  onCancel,
+}: {
+  lookup: { query: string; log: LookupEvent[]; error?: string };
+  onCancel: () => void;
+}) {
+  const steps = lookup.log.slice(-6);
+  return (
+    <div className={`lookup-panel ${lookup.error ? 'failed' : ''}`} role="status" aria-live="polite">
+      <div className="lookup-head">
+        <span>{lookup.error ? 'Lookup failed' : `Researching “${lookup.query}”`}</span>
+        <button className="link-btn" onClick={onCancel}>
+          {lookup.error ? 'Dismiss' : 'Cancel'}
+        </button>
+      </div>
+      {lookup.error ? (
+        <p className="lookup-error">{lookup.error}</p>
+      ) : (
+        <ul className="lookup-log">
+          {steps.length === 0 && <li>Starting…</li>}
+          {steps.map((e, i) => (
+            <li key={i}>
+              {e.type === 'search' && <>Searching: {e.query}</>}
+              {e.type === 'fetch' && <>Reading: {shortUrl(e.url)}</>}
+              {e.type === 'status' && <>{e.message}</>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function shortUrl(u: string) {
+  try {
+    const url = new URL(u);
+    return url.hostname + (url.pathname.length > 30 ? url.pathname.slice(0, 30) + '…' : url.pathname);
+  } catch {
+    return u;
+  }
 }

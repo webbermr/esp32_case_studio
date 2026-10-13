@@ -54,6 +54,12 @@ export function SpecPanel({ device, settings, layout, edited, onDevice, onSettin
           <span className={`chip chip-${device.category.toLowerCase()}`}>{device.category}</span>
         </div>
         <p className="maker">{device.manufacturer}</p>
+        {device.origin === 'lookup' && (
+          <p className="confidence conf-estimated">
+            Researched by Claude from web sources. Numbers can be wrong: check them against the linked sources and your
+            board before printing.
+          </p>
+        )}
         <p className={`confidence conf-${device.confidence}`}>{CONFIDENCE_TEXT[device.confidence]}</p>
         {device.notes && <p className="notes">{device.notes}</p>}
         {edited && (
