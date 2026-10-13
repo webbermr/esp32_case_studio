@@ -62,6 +62,13 @@ describe('buildCase', () => {
     });
   }
 
+  it('grows the cavity for parts that overhang the PCB', () => {
+    const devkit = DEVICES.find((d) => d.id === 'esp32-devkitc-v4')!;
+    const L = computeLayout(devkit, DEFAULT_SETTINGS);
+    // 48.26 PCB + 6.04 antenna overhang (Espressif drawing)
+    expect(L.innerLength - 2 * DEFAULT_SETTINGS.clearance).toBeCloseTo(54.3, 1);
+  });
+
   it('keeps the PCB above parts on its underside', () => {
     const d = { ...customDevice(), board: { ...customDevice().board, heightBelow: 9 } };
     const L = computeLayout(d, DEFAULT_SETTINGS);

@@ -158,7 +158,7 @@ export function Viewer({ device, parts, view, highlight }: Props) {
       e.position.z = lift;
       content.add(e);
     }
-    if (view.board) {
+    if (view.board && parts.deviceId === device.id) {
       const board = buildBoardModel(device, L.boardOrigin);
       if (view.exploded) board.position.z += lift * 0.45;
       board.traverse((o) => {
@@ -192,8 +192,9 @@ export function Viewer({ device, parts, view, highlight }: Props) {
     // Centre the model on the grid
     content.position.set(-L.outerLength / 2, -L.outerWidth / 2, 0);
 
-    // Re-frame the camera only when switching boards, not on every tweak.
-    const fitKey = device.id;
+    // Re-frame the camera only when switching boards, not on every tweak, and
+    // only once the geometry for the new board has been built.
+    const fitKey = parts.deviceId;
     if (fitKey !== r.lastFitKey) {
       r.lastFitKey = fitKey;
       const radius = Math.hypot(L.outerLength, L.outerWidth, L.totalHeight) / 2;

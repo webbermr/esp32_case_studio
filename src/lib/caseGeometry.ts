@@ -19,10 +19,31 @@ export interface CaseLayout {
   standoff: number;
 }
 
+/**
+ * Footprint the cavity must hold, in board coordinates. Parts that hang past the
+ * PCB edge (module antennas, connectors) grow it, unless they get a cut-out:
+ * those pass through the wall instead.
+ */
+export function boardExtents(device: Device) {
+  let minX = 0;
+  let minY = 0;
+  let maxX = device.board.length;
+  let maxY = device.board.width;
+  for (const f of device.features) {
+    if (f.cutout) continue;
+    minX = Math.min(minX, f.x - f.size[0] / 2);
+    maxX = Math.max(maxX, f.x + f.size[0] / 2);
+    minY = Math.min(minY, f.y - f.size[1] / 2);
+    maxY = Math.max(maxY, f.y + f.size[1] / 2);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
 export function computeLayout(device: Device, s: CaseSettings): CaseLayout {
   const b = device.board;
-  const innerLength = b.length + 2 * s.clearance;
-  const innerWidth = b.width + 2 * s.clearance;
+  const e = boardExtents(device);
+  const innerLength = e.maxX - e.minX + 2 * s.clearance;
+  const innerWidth = e.maxY - e.minY + 2 * s.clearance;
   // The PCB must clear anything hanging off its underside.
   const standoff = Math.max(s.standoff, b.heightBelow + 0.5);
   const boardTopZ = s.floor + standoff + b.thickness;
@@ -34,7 +55,7 @@ export function computeLayout(device: Device, s: CaseSettings): CaseLayout {
     outerWidth: innerWidth + 2 * s.wall,
     baseHeight,
     totalHeight: baseHeight + s.lidThickness,
-    boardOrigin: new THREE.Vector3(s.wall + s.clearance, s.wall + s.clearance, s.floor + standoff),
+    boardOrigin: new THREE.Vector3(s.wall + s.clearance - e.minX, s.wall + s.clearance - e.minY, s.floor + standoff),
     boardTopZ,
     standoff,
   };
@@ -206,6 +227,8 @@ function sideCutter(S: Scope, f: Feature, s: CaseSettings, L: CaseLayout): Manif
 // Parts
 
 export interface CaseParts {
+  /** Which device these parts were built for (builds are debounced, so it can lag the selection). */
+  deviceId: string;
   base: THREE.BufferGeometry;
   lid: THREE.BufferGeometry;
   layout: CaseLayout;
@@ -294,7 +317,7 @@ function buildWith(S: Scope, device: Device, s: CaseSettings): CaseParts {
   }
   if (lidCuts.length) lid = S.sub(lid, S.union(lidCuts));
 
-  return { base: S.toGeometry(base), lid: S.toGeometry(lid), layout: L };
+  return { deviceId: device.id, base: S.toGeometry(base), lid: S.toGeometry(lid), layout: L };
 }
 
 /** Rotate the lid upside down so its flat top sits on the print bed. */
