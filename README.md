@@ -47,7 +47,7 @@ Every button and slide switch with a cut-out gets a small printed part by defaul
 
 The parts are included in **Download STL**, or you can download them alone with **Buttons**. They're oriented to print without supports, outer end down.
 
-Tips: print the plungers in PETG or PLA at 0.12–0.16 mm layers. If a plunger binds, sand it lightly or raise its diameter clearance by printing the case with a slightly bigger **Plunger Ø** gap. If the switch cap is loose on the lever, lower **Lever width/height** by 0.1 mm.
+Tips: print the plungers in PETG or PLA at 0.12–0.16 mm layers. The hole leaves 0.3 mm of clearance all round; if a plunger still binds, sand it lightly. If the switch cap is loose on the lever, lower **Lever width/height** by 0.1 mm.
 
 ## How it works
 
