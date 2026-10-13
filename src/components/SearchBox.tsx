@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { searchDevices } from '../lib/search';
+import type { LookupStatus } from '../lib/lookupClient';
 import type { Device } from '../types';
 
 interface Props {
@@ -7,11 +8,12 @@ interface Props {
   selectedId: string;
   onSelect: (d: Device) => void;
   onCustom: () => void;
-  /** Present when online lookup is available. */
-  onLookup?: (query: string) => void;
+  onLookup: (query: string) => void;
+  lookupStatus: LookupStatus;
 }
 
-export function SearchBox({ devices, selectedId, onSelect, onCustom, onLookup }: Props) {
+export function SearchBox({ devices, selectedId, onSelect, onCustom, onLookup: lookup, lookupStatus }: Props) {
+  const onLookup = lookupStatus === 'enabled' ? lookup : undefined;
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -92,6 +94,16 @@ export function SearchBox({ devices, selectedId, onSelect, onCustom, onLookup }:
             >
               <span className="r-name">Look up “{query.trim()}” online</span>
               <span className="r-meta">Claude searches manufacturer datasheets and builds a board spec (about 1–3 min)</span>
+            </li>
+          )}
+          {!onLookup && query.trim().length > 1 && (
+            <li className="lookup disabled" aria-disabled>
+              <span className="r-name">Online lookup is off</span>
+              <span className="r-meta">
+                {lookupStatus === 'no-key'
+                  ? 'Add ANTHROPIC_API_KEY=… to the .env file in the project folder, then restart npm run dev.'
+                  : 'Lookup needs the local server: run npm run dev (or npm run preview) and open the address it prints.'}
+              </span>
             </li>
           )}
           <li

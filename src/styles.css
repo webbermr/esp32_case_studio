@@ -93,6 +93,8 @@ button, input, select { font: inherit; color: inherit; }
 .results .lookup { display: block; border-top: 1px solid var(--line); margin-top: 4px; }
 .results .lookup .r-name { color: var(--accent); display: block; }
 .results .lookup .r-meta { display: block; }
+.results .lookup.disabled { cursor: default; }
+.results .lookup.disabled .r-name { color: var(--muted); }
 .lookup-panel { margin: 0 16px 12px; padding: 10px 12px; border-radius: var(--radius); background: #1a2430; border: 1px solid #2b4a66; font-size: 12px; }
 .lookup-panel.failed { border-color: var(--bad); background: #2a1515; }
 .lookup-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 13px; }

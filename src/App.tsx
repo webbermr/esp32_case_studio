@@ -6,7 +6,7 @@ import { DEVICES, customDevice } from './data/devices';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { buildCase, initCsg, lidForPrinting, type CaseParts } from './lib/caseGeometry';
 import { download, geometryToStl, layoutOnBed } from './lib/exportStl';
-import { cachedLookups, lookupAvailable, lookupBoard, type LookupEvent } from './lib/lookupClient';
+import { cachedLookups, lookupBoard, lookupStatus, type LookupEvent, type LookupStatus } from './lib/lookupClient';
 import { DEFAULT_SETTINGS, type CaseSettings, type Device } from './types';
 
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -30,13 +30,13 @@ export default function App() {
   });
   const fileInput = useRef<HTMLInputElement>(null);
   const [kernelReady, setKernelReady] = useState(false);
-  const [canLookup, setCanLookup] = useState(false);
+  const [canLookup, setCanLookup] = useState<LookupStatus>('no-server');
   const [lookup, setLookup] = useState<{ query: string; log: LookupEvent[]; error?: string } | null>(null);
   const lookupAbort = useRef<AbortController | null>(null);
 
   // Lookups need the local server (npm run dev / preview) with an API key.
   useEffect(() => {
-    lookupAvailable().then(setCanLookup);
+    lookupStatus().then(setCanLookup);
     cachedLookups().then((found) => {
       if (found.length) setLibrary((lib) => [...lib, ...found.filter((d) => !lib.some((x) => x.id === d.id))]);
     });
@@ -152,7 +152,8 @@ export default function App() {
           selectedId={device.id}
           onSelect={selectDevice}
           onCustom={() => selectDevice(customDevice())}
-          onLookup={canLookup ? runLookup : undefined}
+          onLookup={runLookup}
+          lookupStatus={canLookup}
         />
         {lookup && <LookupProgress lookup={lookup} onCancel={cancelLookup} />}
         <SpecPanel

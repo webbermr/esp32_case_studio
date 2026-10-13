@@ -121,14 +121,27 @@ const api: Connect.NextHandleFunction = async (req, res, next) => {
   next();
 };
 
+function logStatus() {
+  if (lookupEnabled()) {
+    console.log('  \x1b[32m✓\x1b[0m Online board lookup enabled (API key found)');
+  } else {
+    console.log(
+      `  \x1b[33m!\x1b[0m Online board lookup disabled: no ANTHROPIC_API_KEY found.\n` +
+        `    Put ANTHROPIC_API_KEY=sk-ant-... in ${path.resolve('.env')} and restart.`,
+    );
+  }
+}
+
 export function boardLookupApi(): Plugin {
   return {
     name: 'board-lookup-api',
     configureServer(server) {
       server.middlewares.use(api);
+      server.httpServer?.once('listening', logStatus);
     },
     configurePreviewServer(server) {
       server.middlewares.use(api);
+      server.httpServer?.once('listening', logStatus);
     },
   };
 }

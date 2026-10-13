@@ -7,14 +7,20 @@ export type LookupEvent =
   | { type: 'done'; device: Device }
   | { type: 'error'; message: string };
 
-/** Whether the local server has an API key. False when served as a static site. */
-export async function lookupAvailable(): Promise<boolean> {
+/**
+ * - enabled:   local server with an API key
+ * - no-key:    local server running, but no ANTHROPIC_API_KEY
+ * - no-server: static hosting (or an old server without the lookup API)
+ */
+export type LookupStatus = 'enabled' | 'no-key' | 'no-server';
+
+export async function lookupStatus(): Promise<LookupStatus> {
   try {
     const r = await fetch('./api/status');
-    if (!r.ok) return false;
-    return Boolean((await r.json()).lookup);
+    if (!r.ok || !r.headers.get('content-type')?.includes('json')) return 'no-server';
+    return (await r.json()).lookup ? 'enabled' : 'no-key';
   } catch {
-    return false;
+    return 'no-server';
   }
 }
 
