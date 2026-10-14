@@ -3,6 +3,8 @@ import type { CaseLayout } from '../lib/caseGeometry';
 import { cutoutSize, DEFAULT_LEVER, DEFAULT_TRAVEL, plungerDims, usesActuator } from '../lib/caseGeometry';
 import { KIND_COLORS } from '../lib/boardModel';
 import type { CaseSettings, Device, Feature, FeatureKind, Side } from '../types';
+import { mirrorX, mirrorY, rotate180, rotate90, turnOver } from '../lib/transform';
+import type { ReferenceImage } from './Viewer';
 import { NumberField } from './NumberField';
 
 interface Props {
@@ -14,6 +16,10 @@ interface Props {
   onSettings: (s: CaseSettings) => void;
   onReset: () => void;
   onHighlight: (id: string | null) => void;
+  reference: ReferenceImage | null;
+  onReference: (r: ReferenceImage | null) => void;
+  onPlace: (p: { kind: 'feature'; id: string } | { kind: 'hole'; index: number }) => void;
+  placing: { kind: 'feature'; id: string } | { kind: 'hole'; index: number } | null;
 }
 
 const SIDES: Side[] = ['left', 'right', 'front', 'back', 'top', 'bottom'];
@@ -28,7 +34,20 @@ const CONFIDENCE_TEXT: Record<Device['confidence'], string> = {
   estimated: 'Estimated dimensions. Measure your board before printing.',
 };
 
-export function SpecPanel({ device, settings, layout, edited, onDevice, onSettings, onReset, onHighlight }: Props) {
+export function SpecPanel({
+  device,
+  settings,
+  layout,
+  edited,
+  onDevice,
+  onSettings,
+  onReset,
+  onHighlight,
+  reference,
+  onReference,
+  onPlace,
+  placing,
+}: Props) {
   const [openFeature, setOpenFeature] = useState<string | null>(null);
   const b = device.board;
   const setBoard = (patch: Partial<Device['board']>) => onDevice({ ...device, board: { ...b, ...patch } });
@@ -128,6 +147,100 @@ export function SpecPanel({ device, settings, layout, edited, onDevice, onSettin
         </div>
       </details>
 
+      <details open={device.origin === 'lookup'}>
+        <summary>Fix positions</summary>
+        <p className="help">
+          Parts in the wrong place? A mirrored or rotated layout is the usual cause, especially for parts on the back
+          of the board. Flip the whole layout, or load a photo of your board and click <b>Place</b> on a part to drop it
+          where the photo shows it.
+        </p>
+        <div className="tools-row">
+          <button className="tool-btn" onClick={() => onDevice(mirrorX(device))} title="Mirror left ↔ right">
+            ⇆ Mirror
+          </button>
+          <button className="tool-btn" onClick={() => onDevice(mirrorY(device))} title="Mirror front ↔ back">
+            ⇅ Mirror
+          </button>
+          <button className="tool-btn" onClick={() => onDevice(rotate90(device))} title="Rotate 90° counter-clockwise">
+            ⟲ 90°
+          </button>
+          <button className="tool-btn" onClick={() => onDevice(rotate180(device))}>
+            ↻ 180°
+          </button>
+          <button
+            className="tool-btn"
+            onClick={() => onDevice(turnOver(device))}
+            title="Swap which face is on top. Use when back-side parts ended up on the front."
+          >
+            ⤿ Turn over
+          </button>
+        </div>
+        <div className="tools-row">
+          <label className="tool-btn">
+            {reference ? 'Replace photo…' : 'Load board photo…'}
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  onReference({
+                    url: URL.createObjectURL(file),
+                    face: reference?.face ?? 'top',
+                    opacity: reference?.opacity ?? 0.85,
+                    mirror: false,
+                    rotate180: false,
+                  });
+                }
+                e.target.value = '';
+              }}
+            />
+          </label>
+          {reference && (
+            <button className="tool-btn" onClick={() => onReference(null)}>
+              Remove photo
+            </button>
+          )}
+        </div>
+        {reference && <p className="help">The photo shows while you place a part, or when you hide the lid or base.</p>}
+        {reference ? (
+          <div className="ref-controls">
+            <span>Photo shows</span>
+            <select value={reference.face} onChange={(e) => onReference({ ...reference, face: e.target.value as 'top' | 'bottom' })}>
+              <option value="top">top / front</option>
+              <option value="bottom">back / underside</option>
+            </select>
+            <span>Opacity</span>
+            <input
+              type="range"
+              min={0.2}
+              max={1}
+              step={0.05}
+              value={reference.opacity}
+              onChange={(e) => onReference({ ...reference, opacity: Number(e.target.value) })}
+            />
+            <label className="check">
+              <input type="checkbox" checked={reference.mirror} onChange={(e) => onReference({ ...reference, mirror: e.target.checked })} />
+              <span>Mirror photo</span>
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={reference.rotate180}
+                onChange={(e) => onReference({ ...reference, rotate180: e.target.checked })}
+              />
+              <span>Rotate 180°</span>
+            </label>
+          </div>
+        ) : (
+          <p className="help">
+            Crop the photo to the board's outline first; it's stretched to {b.length} × {b.width} mm. Back photos are shown
+            from below, top edge toward the board's front edge.
+          </p>
+        )}
+      </details>
+
       <details open>
         <summary>
           Ports, buttons &amp; parts <span className="count">{device.features.length}</span>
@@ -156,6 +269,13 @@ export function SpecPanel({ device, settings, layout, edited, onDevice, onSettin
                     {f.label}
                   </button>
                   <span className="f-side">{f.side}</span>
+                  <button
+                    className={`place-btn ${placing?.kind === 'feature' && placing.id === f.id ? 'active' : ''}`}
+                    onClick={() => onPlace({ kind: 'feature', id: f.id })}
+                    title="Click on the board in the 3D view to position this part"
+                  >
+                    Place
+                  </button>
                   <span className="f-size">
                     {!f.cutout
                       ? '—'
@@ -324,6 +444,13 @@ export function SpecPanel({ device, settings, layout, edited, onDevice, onSettin
                 onDevice({ ...device, mountingHoles: device.mountingHoles.map((m, j) => (j === i ? { ...m, diameter: v } : m)) })
               }
             />
+            <button
+              className={`place-btn ${placing?.kind === 'hole' && placing.index === i ? 'active' : ''}`}
+              onClick={() => onPlace({ kind: 'hole', index: i })}
+              title="Click on the board to position this hole"
+            >
+              Place
+            </button>
             <button
               className="icon-btn"
               aria-label="Remove hole"

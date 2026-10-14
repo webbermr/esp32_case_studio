@@ -109,6 +109,27 @@ describe('buildCase', () => {
     expect(withPlunger.outerWidth).toBeGreaterThan(without.outerWidth);
   });
 
+  it('reaches the CrowPanel back-side buttons and power switch through the floor', () => {
+    const crow = DEVICES.find((d) => d.id === 'crowpanel-advanced-10-1-esp32-p4')!;
+    const parts = buildCase(crow, DEFAULT_SETTINGS);
+    expect(parts.warnings).toEqual([]);
+    const L = parts.layout;
+    const byId = Object.fromEntries(parts.actuators.map((a) => [a.featureId, a]));
+    expect(Object.keys(byId).sort()).toEqual(['boot', 'power', 'reset']);
+    for (const id of ['reset', 'boot', 'power']) {
+      const f = crow.features.find((x) => x.id === id)!;
+      const g = byId[id].geometry;
+      g.computeBoundingBox();
+      const bb = g.boundingBox!;
+      // Pokes out of the back (floor at z = 0)...
+      expect(bb.min.z).toBeLessThan(0);
+      // ...directly under the part on the board.
+      expect((bb.min.x + bb.max.x) / 2).toBeCloseTo(L.boardOrigin.x + f.x, 1);
+      expect((bb.min.y + bb.max.y) / 2).toBeCloseTo(L.boardOrigin.y + f.y, 1);
+    }
+    expect(byId.power.type).toBe('slider');
+  });
+
   it('skips actuators when switched off', () => {
     const pico = DEVICES.find((d) => d.id === 'rpi-pico')!;
     const off = { ...pico, features: pico.features.map((f) => ({ ...f, actuator: false })) };

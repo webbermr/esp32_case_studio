@@ -64,6 +64,13 @@ export const BoardSchema = z.object({
       shape: z.enum(['rect', 'circle']),
       dimensioned: z.boolean().describe('true only if the position comes straight from a manufacturer dimension'),
       note: z.string(),
+      slideAxis: z.enum(['x', 'y', 'none']).describe('Face-mounted slide switches: axis the lever slides along; otherwise none'),
+      leverWidth: z.number().describe('Slide switch lever width along the slide direction, 0 if unknown/not a switch'),
+      leverHeight: z.number().describe('Slide switch lever size across the slide direction, 0 if unknown'),
+      leverProtrusion: z.number().describe('How far the lever sticks out of the switch body, 0 if unknown'),
+      switchTravel: z.number().describe('Lever travel end to end, 0 if unknown'),
+      openingWidth: z.number().describe('Displays: visible window width (X for top/bottom) if smaller than the body, else 0'),
+      openingHeight: z.number().describe('Displays: visible window height (Y for top/bottom), else 0'),
     }),
   ),
   sources: z.array(z.object({ label: z.string(), url: z.string() })),
@@ -73,12 +80,14 @@ export const BoardSchema = z.object({
 
 const RESEARCH_SYSTEM = `You research the mechanical specifications of electronics dev boards (ESP32, LoRa, RP2040, Arduino and similar) so someone can 3D-print an enclosure.
 
-Find the manufacturer's own sources first: official product pages, datasheets, mechanical/dimension drawings (PDF, DXF), official GitHub hardware repos, STEP model listings. Use reputable distributors or community measurements only to fill gaps, and say so.
+Find the manufacturer's own sources first: official product pages, datasheets, mechanical/dimension drawings (PDF, DXF), official GitHub hardware repos (they often hold STEP models and Eagle/KiCad board files whose part placements are exact), STEP model listings. Use reputable distributors or community measurements only to fill gaps, and say so.
 
 Report, in millimetres (convert inches and say you did):
 - PCB length × width, thickness; tallest part above and below the PCB (or overall height)
 - Mounting holes: diameter and centre positions, and which corner/edge they are measured from
-- Each connector, button, switch, LED, antenna/antenna connector, display and battery connector: type, which edge or face, and offset along that edge
+- Each connector, button, switch, LED, antenna/antenna connector, display and battery connector: type, which FACE of the PCB it is soldered to (front/top or back/underside), which edge it is nearest, its offset along that edge, and which way it is operated (from the edge, or straight out of the face). Slide switches: does the lever point out of the edge or out of the face?
+- For every position, state the viewpoint it was read from: which face the drawing or photo shows, and which edge was at the top of the image. Back-side photos and drawings are mirrored relative to the front: never mix positions read from both without saying so.
+- Display modules: the display is on the front; nearly everything else (buttons, switches, connectors) is usually on the back. Report the glass outline and the active area separately.
 - Anything that overhangs the PCB outline (module antennas, connectors) and by how much
 - Whether pin headers ship soldered
 
@@ -88,13 +97,17 @@ Finish with a compact plain-text report and the list of source URLs you actually
 
 const EXTRACT_SYSTEM = `You convert research notes about a dev board into a JSON board spec for an enclosure generator.
 
-Coordinate system (all mm). View the board from above, component side up, rotated so the USB connector is on the LEFT short edge (if there's no USB, put the main connector there):
-- Origin = the PCB's bottom-left corner. +X along the length (left edge x=0, right edge x=length). +Y along the width (front edge y=0, back edge y=width). z=0 is the PCB TOP surface; negative z is the underside.
+Coordinate system (all mm). Lay the board flat with its FRONT face up: the display side for boards with a display, otherwise the side with the main chips/module. Look down on it with the longer edge horizontal and keep the manufacturer's usual front-view orientation (the way the main product photo or drawing shows the front). Do NOT rotate the board to put the USB port somewhere specific.
+- Origin = the PCB's bottom-left corner as seen from the front. +X along the length (left edge x=0, right edge x=length). +Y along the width (front edge y=0, back edge y=width). z=0 is the PCB TOP surface; negative z is the underside.
 - Mounting holes: centre x, y in that frame. Re-express positions given from other corners.
+- Converting positions read from the BACK: a back view is a mirror image of the front. If the back image was made by flipping the board left-to-right (vertical axis), use x = length − x_back, y = y_back. If it was flipped top-to-bottom (horizontal axis), use x = x_back, y = width − y_back. Say in the note which conversion you used. Parts on the back have negative z (centre = −thickness − sizeZ/2 for a part sitting on the back face).
 - features: one per connector, button, switch, LED, antenna connector, display, battery connector, and any module that overhangs the PCB. x, y, z is the CENTRE of the part's body; sizeX/sizeY/sizeZ its body size. A part sitting on the top surface has z = sizeZ/2. Parts overhanging the edge extend past 0 or length/width.
-- side = the case face you reach the part through: left/right (short edges), front/back (long edges), top (through the lid, e.g. buttons, displays), bottom (through the floor).
+- side = the case face you reach the part through: left/right (short edges), front/back (long edges), top (through the lid: the front face, e.g. displays and front buttons), bottom (through the floor: buttons and switches on the back that are pressed or slid from behind).
+- Slide switches operated from a face (lever sticking out of the face): side "top" or "bottom". Put the lever size and travel in the note.
 - cutout = true for ports, displays, user buttons and edge-mounted antenna connectors with a known position. Set cutout = false for internal parts (U.FL, modules, LEDs) and for any part whose position isn't documented.
 - shape = "circle" for round buttons and SMA connectors, otherwise "rect".
+- Displays: body = the glass outline; openingWidth/openingHeight = a window ~3 mm smaller than the glass on each side (or the active area plus 1 mm if larger), so the lid holds the panel in. 0 for other parts.
+- Slide switches: fill slideAxis, lever size, protrusion and travel when known; 0 otherwise.
 - When the body size isn't published, use typical values (USB-C 7.4×9.0×3.3 with ~1 mm overhang, Micro-USB 5.8×7.6×2.8, tactile button ~4×3×2) and say so in the note.
 - dimensioned = true only when the position comes from a manufacturer dimension. Otherwise put "Estimated: ..." in the note.
 - heightBelow: if male pin headers ship soldered pointing down, use 8.5.
@@ -227,6 +240,14 @@ export function toDevice(query: string, b: z.infer<typeof BoardSchema>): Device 
       cutout: f.cutout,
       shape: f.shape,
       note: f.note || undefined,
+      ...(f.kind === 'switch' && f.slideAxis !== 'none' && (f.side === 'top' || f.side === 'bottom')
+        ? { slideAxis: f.slideAxis }
+        : {}),
+      ...(f.kind === 'switch' && f.leverWidth > 0 && f.leverHeight > 0 && f.leverProtrusion > 0
+        ? { leverSize: [f.leverWidth, f.leverHeight, f.leverProtrusion] as [number, number, number] }
+        : {}),
+      ...(f.kind === 'switch' && f.switchTravel > 0 ? { switchTravel: f.switchTravel } : {}),
+      ...(f.openingWidth > 0 && f.openingHeight > 0 ? { opening: [f.openingWidth, f.openingHeight] as [number, number] } : {}),
     })),
     sources: b.sources.filter((s) => /^https?:\/\//.test(s.url)),
     confidence: b.confidence,

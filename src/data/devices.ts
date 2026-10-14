@@ -437,6 +437,71 @@ export const DEVICES: Device[] = [
     notes: 'Outline, thickness and mounting holes from the RAK19007 datasheet drawing (one hole\'s Y position estimated from the drawing). Module stack height is an estimate.',
   },
 
+  // --------------------------------------------------------------- Displays
+  {
+    id: 'crowpanel-advanced-10-1-esp32-p4',
+    name: 'CrowPanel Advanced 10.1" ESP32-P4 HMI Display',
+    manufacturer: 'Elecrow',
+    category: 'ESP32',
+    aliases: ['crowpanel 10.1', 'crowpanel advanced', 'esp32-p4 display', 'dhe04310d', 'elecrow p4 hmi', 'crowpanel p4'],
+    tags: ['esp32-p4', 'display', 'hmi', 'touch', 'lcd', '1024x600', 'wifi 6', 'esp32-c6'],
+    specs: {
+      MCU: 'ESP32-P4 (+ ESP32-C6 module for Wi-Fi 6 / BLE)',
+      Display: '10.1" IPS, 1024 × 600, capacitive touch (GT911)',
+      USB: '2 × USB-C on the right edge (UART0 programming + USB 2.0)',
+      Buttons: 'RESET (K4), BOOT (K3) on the back, left edge',
+      Power: 'POWER slide switch on the back, right edge; lever points out of the back',
+      Storage: 'microSD slot, opening on the top edge',
+      Connectors: 'XH2.54-4P UART3-IN (power in), 2 × HY2.0-4P (UART/I2C), PH2.0-2P BAT and speaker',
+      'Mounting holes': '4 × M3 (Ø3.2), 3 mm in from each corner',
+      'PCB size': '247 × 147 × 1.7 mm',
+    },
+    // Oriented display side up, as you look at the screen. Everything else is on the back (negative z).
+    board: { length: 247, width: 147, thickness: 1.7, heightAbove: 6.8, heightBelow: 8.1, color: '#1b4a7a' },
+    mountingHoles: [
+      { x: 3, y: 3, diameter: 3.2 },
+      { x: 244, y: 3, diameter: 3.2 },
+      { x: 3, y: 144, diameter: 3.2 },
+      { x: 244, y: 144, diameter: 3.2 },
+    ],
+    features: [
+      {
+        id: 'screen', label: 'Display window', kind: 'display', side: 'top', x: 123.5, y: 73.5, z: 3.4,
+        size: [235, 143, 6.8], opening: [229, 137], cutout: true,
+        note: 'Glass is 235 × 143 mm (STEP model). The window is 3 mm smaller all round so the lid holds the panel; set Headroom to ~0.3 mm so the glass sits against the lid.',
+      },
+      { id: 'usb-j16', label: 'USB-C (J16)', kind: 'usb-c', side: 'right', x: 244.21, y: 83.97, z: -2.78, size: [7.58, 8.94, 4.16], cutout: true, note: 'Mid-mount connector. One port is UART0 (programming), the other USB 2.0: check the silkscreen.' },
+      { id: 'usb-j1', label: 'USB-C (J1)', kind: 'usb-c', side: 'right', x: 244.21, y: 63.03, z: -2.78, size: [7.58, 8.94, 4.16], cutout: true },
+      {
+        id: 'power', label: 'POWER switch (SW1)', kind: 'switch', side: 'bottom', x: 242.25, y: 46.06, z: -3.13,
+        size: [3.5, 9.0, 3.45], cutout: true, slideAxis: 'y', leverSize: [1.5, 1.5, 2.0], switchTravel: 2,
+        note: 'Slide switch on the back with its lever pointing out of the back (not on the edge). Lever 1.5 × 1.5 mm, 2 mm tall, measured from the STEP model; travel 2 mm inferred from the lever offset.',
+      },
+      { id: 'reset', label: 'RESET button (K4)', kind: 'button', side: 'bottom', x: 4.25, y: 129.75, z: -3.95, size: [4.5, 4.5, 4.5], cutout: true, plungerDiameter: 3.5 },
+      { id: 'boot', label: 'BOOT button (K3)', kind: 'button', side: 'bottom', x: 4.25, y: 115.25, z: -3.95, size: [4.5, 4.5, 4.5], cutout: true, plungerDiameter: 3.5 },
+      { id: 'sd', label: 'microSD slot', kind: 'sd', side: 'back', x: 19.38, y: 136.9, z: -2.43, size: [16.15, 15.2, 2.65], cutout: true, note: 'Card goes in from the top edge.' },
+      { id: 'led-pwr', label: 'PWR / CHG LEDs', kind: 'led', side: 'bottom', x: 242.2, y: 73.5, z: -2.0, size: [5.6, 1.62, 0.61], cutout: false, note: 'Two LEDs 4.8 mm apart on the back. Tick to cut a viewing slot.' },
+      { id: 'uart3', label: 'UART3-IN / power (XH2.54-4P, J10)', kind: 'jst', side: 'bottom', x: 242.15, y: 105.69, z: -3.7, size: [5.7, 12.5, 10.0], cutout: false, note: 'Vertical connector: the cable leaves through the back. Tick to cut an opening.' },
+      { id: 'hy-a', label: 'HY2.0-4P (J2)', kind: 'jst', side: 'front', x: 18.0, y: 5.09, z: -5.6, size: [12.0, 6.21, 8.4], cutout: false, note: 'UART / I2C. Tick to cut a cable opening in the bottom edge.' },
+      { id: 'hy-b', label: 'HY2.0-4P (J13)', kind: 'jst', side: 'front', x: 40.0, y: 5.09, z: -5.6, size: [12.0, 6.21, 8.4], cutout: false, note: 'UART / I2C. Tick to cut a cable opening in the bottom edge.' },
+      { id: 'ph-a', label: 'PH2.0-2P (J4)', kind: 'jst', side: 'back', x: 35.75, y: 140.66, z: -4.38, size: [8.01, 8.5, 5.6], cutout: false, note: 'Battery or speaker: check the silkscreen.' },
+      { id: 'ph-b', label: 'PH2.0-2P (J6)', kind: 'jst', side: 'back', x: 215.0, y: 140.66, z: -4.38, size: [8.01, 8.5, 5.6], cutout: false, note: 'Battery or speaker: check the silkscreen.' },
+      { id: 'ph-c', label: 'PH2.0-2P (J3)', kind: 'jst', side: 'back', x: 231.0, y: 140.66, z: -4.38, size: [8.01, 8.5, 5.6], cutout: false, note: 'Battery or speaker: check the silkscreen.' },
+      { id: 'c6', label: 'ESP32-C6 wireless module', kind: 'module', side: 'bottom', x: 8.3, y: 26.6, z: -2.86, size: [16.6, 13.2, 2.51], cutout: false },
+      { id: 'socket', label: 'Wireless module socket (J9/J11)', kind: 'header', side: 'bottom', x: 223.0, y: 11.14, z: -4.05, size: [20.4, 18.28, 5.3], cutout: false },
+      { id: 'gpio', label: 'Expansion header', kind: 'header', side: 'bottom', x: 123.5, y: 142.5, z: -2.75, size: [51.2, 6.6, 4.9], cutout: false },
+      { id: 'cam', label: 'Camera FPC connector', kind: 'other', side: 'bottom', x: 123.5, y: 94.8, z: -3.23, size: [18.6, 5.4, 3.15], cutout: false },
+    ],
+    sources: [
+      { label: 'Elecrow wiki', url: 'https://elecrow.com/wiki/CrowPanel_Advanced_10.1inch_ESP32-P4_HMI_AI_Display_1024x600_IPS.html' },
+      { label: 'Product page', url: 'https://www.elecrow.com/crowpanel-advanced-10-1inch-esp32-p4-hmi-ai-display-1024x600-ips-touch-screen-wifi-6.html' },
+      { label: 'STEP model + Eagle files (GitHub)', url: 'https://github.com/Elecrow-RD/CrowPanel-Advanced-10.1inch-ESP32-P4-HMI-AI-Display-1024x600-IPS-Touch-Screen' },
+    ],
+    confidence: 'datasheet',
+    notes:
+      'Every position is measured from Elecrow\'s STEP model (ESP32-P4-10_1-inch-20251230.stp, board V1.2); button and switch designators from the V1.2 Eagle board file. The optional camera module hangs off the bottom edge on its cable and is not modelled. Plungers and the power-switch cap stick out of the back by ~1.2–2 mm.',
+  },
+
   // ------------------------------------------------------------------ Other
   {
     id: 'rpi-pico',

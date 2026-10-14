@@ -38,6 +38,16 @@ Things to know:
 
 The code is in `server/lookup.ts` (prompts, schema, API calls) and `server/plugin.ts` (the `/api/*` endpoints and cache).
 
+## Fixing part positions
+
+Looked-up boards (and estimated library entries) can have parts in the wrong place. Mirrored layouts are the most common problem, especially on display modules, where nearly everything sits on the back. The **Fix positions** section in the left panel has three tools:
+
+- **Mirror / rotate / turn over:** fixes a whole layout that is flipped or rotated, in one click.
+- **Board photo:** load a photo cropped to the board's outline. It's laid onto the PCB in the 3D view, either the front (seen from above) or the back (seen from below, with the photo's top edge toward the board's front edge).
+- **Place:** click **Place** next to a part or mounting hole, then click where it is on the board. The camera switches to the right face automatically. Edge parts only move along their edge.
+
+**Top / Bottom / 3D** in the viewer's top-right corner switch camera views at any time.
+
 ## Printed buttons and switches
 
 Every button and slide switch with a cut-out gets a small printed part by default. You can turn this off per part in the left panel.

@@ -54,6 +54,14 @@ export interface Feature {
   switchTravel?: number;
   /** Slide-switch lever: [width along slide, height, protrusion from body]. Default [1.5, 1.5, 1.5]. */
   leverSize?: [number, number, number];
+  /** For switches on the top/bottom face: which board axis the lever slides along. Default 'x'. */
+  slideAxis?: 'x' | 'y';
+  /**
+   * Explicit opening size [width, height] instead of body size + margin. Lets a
+   * display window be smaller than the glass so the lid holds the panel in.
+   * Width/height are as seen through the side (top/bottom: X × Y).
+   */
+  opening?: [number, number];
 }
 
 export interface MountingHole {

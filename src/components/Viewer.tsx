@@ -15,11 +15,28 @@ export interface ViewOptions {
   xray: boolean;
 }
 
+/** A photo of the real board, laid on the PCB so parts can be placed against it. */
+export interface ReferenceImage {
+  url: string;
+  /** Which face the photo shows. A back photo is seen from below in the viewer. */
+  face: 'top' | 'bottom';
+  opacity: number;
+  mirror: boolean;
+  rotate180: boolean;
+}
+
+export type CameraPreset = 'iso' | 'top' | 'bottom';
+
 interface Props {
   device: Device;
   parts: CaseParts | null;
   view: ViewOptions;
   highlight: string | null;
+  reference?: ReferenceImage | null;
+  /** Bump `n` to move the camera to `preset`. */
+  camera?: { preset: CameraPreset; n: number };
+  /** When set, clicking the board reports the point in board coordinates. */
+  onPick?: ((x: number, y: number) => void) | null;
 }
 
 interface SceneRefs {
@@ -30,11 +47,15 @@ interface SceneRefs {
   controls: OrbitControls;
   content: THREE.Group;
   lastFitKey: string;
+  board: THREE.Group | null;
+  textures: Map<string, THREE.Texture>;
 }
 
-export function Viewer({ device, parts, view, highlight }: Props) {
+export function Viewer({ device, parts, view, highlight, reference, camera: cameraCmd, onPick }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const refs = useRef<SceneRefs | null>(null);
+  const pickRef = useRef(onPick);
+  pickRef.current = onPick;
 
   // One-time scene setup
   useEffect(() => {
@@ -88,7 +109,28 @@ export function Viewer({ device, parts, view, highlight }: Props) {
     const content = new THREE.Group();
     scene.add(content);
 
-    refs.current = { renderer, labels, scene, camera, controls, content, lastFitKey: '' };
+    refs.current = { renderer, labels, scene, camera, controls, content, lastFitKey: '', board: null, textures: new Map() };
+
+    // Click (not drag) on the board while placing a part.
+    const ray = new THREE.Raycaster();
+    let down: { x: number; y: number } | null = null;
+    const onDown = (e: PointerEvent) => (down = { x: e.clientX, y: e.clientY });
+    const onUp = (e: PointerEvent) => {
+      const r = refs.current;
+      if (!down || !pickRef.current || !r?.board) return;
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      down = null;
+      if (moved > 4) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      ray.setFromCamera(ndc, camera);
+      const hit = ray.intersectObject(r.board, true)[0];
+      if (!hit) return;
+      const local = r.board.worldToLocal(hit.point.clone());
+      pickRef.current(Math.round(local.x * 100) / 100, Math.round(local.y * 100) / 100);
+    };
+    renderer.domElement.addEventListener('pointerdown', onDown);
+    renderer.domElement.addEventListener('pointerup', onUp);
 
     const resize = () => {
       const w = el.clientWidth;
@@ -113,6 +155,9 @@ export function Viewer({ device, parts, view, highlight }: Props) {
 
     return () => {
       cancelAnimationFrame(raf);
+      renderer.domElement.removeEventListener('pointerdown', onDown);
+      renderer.domElement.removeEventListener('pointerup', onUp);
+      refs.current?.textures.forEach((t) => t.dispose());
       ro.disconnect();
       controls.dispose();
       renderer.dispose();
@@ -168,8 +213,11 @@ export function Viewer({ device, parts, view, highlight }: Props) {
       content.add(m);
     }
 
+    r.board = null;
     if (view.board && parts.deviceId === device.id) {
       const board = buildBoardModel(device, L.boardOrigin);
+      r.board = board;
+      if (reference) board.add(referencePlane(reference, device, r.textures));
       if (view.exploded) board.position.z += lift * 0.45;
       board.traverse((o) => {
         const mesh = o as THREE.Mesh;
@@ -211,12 +259,60 @@ export function Viewer({ device, parts, view, highlight }: Props) {
       r.camera.position.copy(dir.multiplyScalar(dist)).add(r.controls.target);
       r.controls.update();
     }
-  }, [device, parts, view, highlight]);
+  }, [device, parts, view, highlight, reference]);
 
-  return <div className="viewer" ref={host} />;
+  // Camera presets (top / bottom / 3D)
+  useEffect(() => {
+    const r = refs.current;
+    if (!r || !parts || !cameraCmd) return;
+    const L = parts.layout;
+    const radius = Math.hypot(L.outerLength, L.outerWidth) / 2;
+    const dist = (radius / Math.sin(THREE.MathUtils.degToRad(r.camera.fov / 2))) * 1.05;
+    const zMid = L.boardTopZ;
+    r.controls.target.set(0, 0, zMid);
+    if (cameraCmd.preset === 'top') r.camera.position.set(0, -0.001 * dist, zMid + dist);
+    else if (cameraCmd.preset === 'bottom') r.camera.position.set(0, -0.001 * dist, zMid - dist);
+    else r.camera.position.copy(new THREE.Vector3(0.55, -0.75, 0.6).normalize().multiplyScalar(dist * 1.1)).add(r.controls.target);
+    r.controls.update();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraCmd?.n]);
+
+  return <div className={`viewer ${onPick ? 'picking' : ''}`} ref={host} />;
 }
 
 const fmt = (n: number) => n.toFixed(1);
+
+function referencePlane(ref: ReferenceImage, device: Device, cache: Map<string, THREE.Texture>) {
+  const { length: L, width: W, thickness: t } = device.board;
+  let tex = cache.get(ref.url);
+  if (!tex) {
+    tex = new THREE.TextureLoader().load(ref.url);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    cache.set(ref.url, tex);
+  }
+  // Per-plane copy so mirror/rotate settings don't leak between boards.
+  const map = tex.clone();
+  map.needsUpdate = true;
+  map.center.set(0.5, 0.5);
+  map.rotation = ref.rotate180 ? Math.PI : 0;
+  map.repeat.set(ref.mirror ? -1 : 1, 1);
+  map.wrapS = THREE.RepeatWrapping;
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(L, W),
+    // Drawn over everything (parts, display panels) so it's always visible for alignment.
+    new THREE.MeshBasicMaterial({ map, transparent: true, opacity: ref.opacity, depthWrite: false, depthTest: false, side: THREE.FrontSide }),
+  );
+  if (ref.face === 'top') {
+    plane.position.set(L / 2, W / 2, t + 0.06);
+  } else {
+    // Seen from below: the photo's top edge lines up with the board's front edge (y = 0).
+    plane.rotateX(Math.PI);
+    plane.position.set(L / 2, W / 2, -0.06);
+  }
+  plane.renderOrder = 10;
+  // Only the face being looked at shows it: a top photo from above, a back photo from below.
+  return plane;
+}
 
 function hiMat(base: THREE.MeshStandardMaterial) {
   const mat = base.clone();

@@ -42,8 +42,14 @@ export function boardExtents(device: Device) {
 export function computeLayout(device: Device, s: CaseSettings): CaseLayout {
   const b = device.board;
   const e = boardExtents(device);
-  // The PCB must clear anything hanging off its underside.
-  const standoff = Math.max(s.standoff, b.heightBelow + 0.5);
+  // The PCB must clear anything hanging off its underside, and leave room for
+  // the collar of any plunger that presses a button through the floor.
+  let standoff = Math.max(s.standoff, b.heightBelow + 0.5);
+  for (const f of device.features) {
+    if (!usesActuator(f) || f.kind !== 'button' || f.side !== 'bottom') continue;
+    const faceBelowPcb = -(f.z - f.size[2] / 2) - b.thickness;
+    standoff = Math.max(standoff, plungerDims(f).need - faceBelowPcb);
+  }
   const boardTopZ = s.floor + standoff + b.thickness;
   let baseHeight = boardTopZ + b.heightAbove + s.topClearance;
 
@@ -204,6 +210,7 @@ class Scope {
 
 /** Size of the opening a feature needs, as seen through its side. */
 export function cutoutSize(f: Feature, margin: number): { w: number; h: number } {
+  if (f.opening) return { w: f.opening[0], h: f.opening[1] };
   const [sx, sy, sz] = f.size;
   switch (f.side) {
     case 'left':
@@ -316,14 +323,14 @@ function partFrame(f: Feature, s: CaseSettings, L: CaseLayout): PartFrame {
   let inner: number, outer: number, wallName: string;
   switch (f.side) {
     case 'top':
-      [t, w, n] = [V(1, 0, 0), V(0, 1, 0), V(0, 0, 1)];
+      [t, w, n] = f.slideAxis === 'y' ? [V(0, 1, 0), V(-1, 0, 0), V(0, 0, 1)] : [V(1, 0, 0), V(0, 1, 0), V(0, 0, 1)];
       face = c.clone().setZ(c.z + sz / 2);
       inner = L.baseHeight - face.z;
       outer = L.totalHeight - face.z;
       wallName = 'lid';
       break;
     case 'bottom':
-      [t, w, n] = [V(1, 0, 0), V(0, -1, 0), V(0, 0, -1)];
+      [t, w, n] = f.slideAxis === 'y' ? [V(0, 1, 0), V(1, 0, 0), V(0, 0, -1)] : [V(1, 0, 0), V(0, -1, 0), V(0, 0, -1)];
       face = c.clone().setZ(c.z - sz / 2);
       inner = face.z - s.floor;
       outer = face.z;

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchBox } from './components/SearchBox';
 import { SpecPanel } from './components/SpecPanel';
-import { Viewer, type ViewOptions } from './components/Viewer';
+import { Viewer, type CameraPreset, type ReferenceImage, type ViewOptions } from './components/Viewer';
 import { DEVICES, customDevice } from './data/devices';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { buildCase, initCsg, lidForPrinting, type CaseParts } from './lib/caseGeometry';
@@ -30,6 +30,12 @@ export default function App() {
   });
   const fileInput = useRef<HTMLInputElement>(null);
   const [kernelReady, setKernelReady] = useState(false);
+  // Reference photos, per board (object URLs; kept for this browser session).
+  const [references, setReferences] = useState<Record<string, ReferenceImage>>({});
+  const [camera, setCamera] = useState<{ preset: CameraPreset; n: number }>({ preset: 'iso', n: 0 });
+  const moveCamera = (preset: CameraPreset) => setCamera((c) => ({ preset, n: c.n + 1 }));
+  /** Part (or mounting hole) being positioned by clicking on the board. */
+  const [placing, setPlacing] = useState<{ kind: 'feature'; id: string } | { kind: 'hole'; index: number } | null>(null);
   const [canLookup, setCanLookup] = useState<LookupStatus>('no-server');
   const [lookup, setLookup] = useState<{ query: string; log: LookupEvent[]; error?: string } | null>(null);
   const lookupAbort = useRef<AbortController | null>(null);
@@ -145,6 +151,58 @@ export default function App() {
 
   const toggle = (k: keyof ViewOptions) => setView((v) => ({ ...v, [k]: !v[k] }));
 
+  const reference = references[device.id] ?? null;
+  const setReference = (r: ReferenceImage | null) =>
+    setReferences((all) => {
+      const next = { ...all };
+      if (r) next[device.id] = r;
+      else delete next[device.id];
+      return next;
+    });
+
+  const startPlacing = (p: NonNullable<typeof placing>) => {
+    setPlacing(p);
+    const f = p.kind === 'feature' ? device.features.find((x) => x.id === p.id) : null;
+    const fromBelow = f ? f.side === 'bottom' || (f.side !== 'top' && f.z < 0 && reference?.face === 'bottom') : reference?.face === 'bottom';
+    moveCamera(fromBelow ? 'bottom' : 'top');
+  };
+
+  const pick = (x: number, y: number) => {
+    if (!placing) return;
+    if (placing.kind === 'hole') {
+      setDevice((d) => ({ ...d, mountingHoles: d.mountingHoles.map((h, i) => (i === placing.index ? { ...h, x, y } : h)) }));
+    } else {
+      setDevice((d) => ({
+        ...d,
+        features: d.features.map((f) => {
+          if (f.id !== placing.id) return f;
+          // Edge parts only move along their edge; face parts move freely.
+          if (f.side === 'left' || f.side === 'right') return { ...f, y };
+          if (f.side === 'front' || f.side === 'back') return { ...f, x };
+          return { ...f, x, y };
+        }),
+      }));
+    }
+    setPlacing(null);
+  };
+
+  useEffect(() => {
+    if (!placing) return;
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setPlacing(null);
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [placing]);
+
+  // While placing, show just the board so nothing blocks the click.
+  const shownView: ViewOptions = placing
+    ? { board: true, base: false, lid: false, exploded: false, xray: false, dimensions: false }
+    : view;
+  const placingLabel = placing
+    ? placing.kind === 'hole'
+      ? `mounting hole #${placing.index + 1}`
+      : device.features.find((f) => f.id === placing.id)?.label ?? 'part'
+    : '';
+
   return (
     <div className="app">
       <aside className="left">
@@ -171,6 +229,10 @@ export default function App() {
           onSettings={setSettings}
           onReset={() => setDevice(clone(baseline))}
           onHighlight={setHighlight}
+          reference={reference}
+          onReference={setReference}
+          onPlace={startPlacing}
+          placing={placing}
         />
       </aside>
 
@@ -222,7 +284,30 @@ export default function App() {
             />
           </div>
         </div>
-        <Viewer device={device} parts={parts} view={view} highlight={highlight} />
+        <Viewer
+          device={device}
+          parts={parts}
+          view={shownView}
+          highlight={placing?.kind === 'feature' ? placing.id : highlight}
+          reference={placing || !view.lid || !view.base ? reference : null}
+          camera={camera}
+          onPick={placing ? pick : null}
+        />
+        <div className="view-presets">
+          <button onClick={() => moveCamera('top')} title="Look at the top (front) of the board">Top</button>
+          <button onClick={() => moveCamera('bottom')} title="Look at the underside (back)">Bottom</button>
+          <button onClick={() => moveCamera('iso')}>3D</button>
+        </div>
+        {placing && (
+          <div className="place-banner" role="status">
+            <span>
+              Click on the board where the <b>{placingLabel}</b> is. Drag to rotate, Esc to cancel.
+            </span>
+            <button className="link-btn" onClick={() => setPlacing(null)}>
+              Cancel
+            </button>
+          </div>
+        )}
         <div className="status">
           {(building || !kernelReady) && !error && <span className="pill">{kernelReady ? 'Rebuilding…' : 'Loading geometry engine…'}</span>}
           {error && <span className="pill err">{error}</span>}
