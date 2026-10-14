@@ -614,6 +614,63 @@ function buildWith(S: Scope, device: Device, s: CaseSettings): CaseParts {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Fit-check plate: a thin board-sized plate with a hole at every part, to print
+// in a few minutes and lay on the real board before printing the whole case.
+
+export const FIT_CHECK_THICKNESS = 1.2;
+const FIT_KINDS = new Set(['usb-c', 'micro-usb', 'usb-a', 'button', 'switch', 'led', 'sma', 'ufl', 'jst', 'sd', 'barrel', 'battery']);
+
+export function buildFitCheck(device: Device): THREE.BufferGeometry {
+  if (!kernel) throw new Error('CSG kernel not initialised; await initCsg() first');
+  const S = new Scope(kernel);
+  try {
+    const { length: Lb, width: Wb } = device.board;
+    const t = FIT_CHECK_THICKNESS;
+    let plate = S.extrude(S.roundedRect(0, 0, Lb, Wb, 1), 0, t);
+    const cuts: Manifold[] = [];
+    const zc = t / 2;
+    const h = t + 2;
+
+    for (const m of device.mountingHoles) cuts.push(S.cylinder(m.x, m.y, zc, m.diameter / 2, h, 'z'));
+
+    // Orientation key: chamfered corner at the origin (front-left, seen from the top).
+    cuts.push(S.extrude(S.polygon([[-1, -1], [6, -1], [-1, 6]]), -1, t + 1));
+
+    const notch = 2.5;
+    for (const f of device.features) {
+      const [sx, sy] = f.size;
+      const big = sx * sy > 0.3 * Lb * Wb;
+      if (big || !(f.cutout || FIT_KINDS.has(f.kind))) continue;
+      const pad = 0.3;
+      switch (f.side) {
+        case 'left':
+          cuts.push(S.box(notch / 2 - 1, f.y, zc, notch + 2, sy + 2 * pad, h));
+          break;
+        case 'right':
+          cuts.push(S.box(Lb - notch / 2 + 1, f.y, zc, notch + 2, sy + 2 * pad, h));
+          break;
+        case 'front':
+          cuts.push(S.box(f.x, notch / 2 - 1, zc, sx + 2 * pad, notch + 2, h));
+          break;
+        case 'back':
+          cuts.push(S.box(f.x, Wb - notch / 2 + 1, zc, sx + 2 * pad, notch + 2, h));
+          break;
+        default:
+          cuts.push(
+            f.shape === 'circle'
+              ? S.cylinder(f.x, f.y, zc, Math.max(sx, sy) / 2 + pad, h, 'z')
+              : S.box(f.x, f.y, zc, sx + 2 * pad, sy + 2 * pad, h),
+          );
+      }
+    }
+    if (cuts.length) plate = S.sub(plate, S.union(cuts));
+    return S.toGeometry(plate);
+  } finally {
+    S.dispose();
+  }
+}
+
 /** Rotate the lid upside down so its flat top sits on the print bed. */
 export function lidForPrinting(lid: THREE.BufferGeometry): THREE.BufferGeometry {
   const g = lid.clone();

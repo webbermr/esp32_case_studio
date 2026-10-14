@@ -59,6 +59,12 @@ The parts are included in **Download STL**, or you can download them alone with 
 
 Tips: print the plungers in PETG or PLA at 0.12–0.16 mm layers. The hole leaves 0.3 mm of clearance all round; if a plunger still binds, sand it lightly. If the switch cap is loose on the lever, lower **Lever width/height** by 0.1 mm.
 
+## Fit-check plate
+
+Before printing a whole case, click **Fit check** in the toolbar to download a 1.2 mm plate the size of the PCB. It has the mounting holes, a hole over every button, switch, port and LED, and notches where the edge connectors are. It prints in a few minutes. Lay it on your board: if every part shows through its hole, the case will fit. To check parts on the back, flip the plate over.
+
+The chamfered corner is the board's front-left corner, seen from the top. Turn on the **Fit check** toggle to see the plate above the board in the 3D view.
+
 ## Wall mounts and stands
 
 Under **Wall mount & stand** in the left panel:

@@ -4,7 +4,7 @@ import { SpecPanel } from './components/SpecPanel';
 import { Viewer, type CameraPreset, type ReferenceImage, type ViewOptions } from './components/Viewer';
 import { DEVICES, customDevice } from './data/devices';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import { buildCase, initCsg, lidForPrinting, type CaseParts } from './lib/caseGeometry';
+import { buildCase, buildFitCheck, initCsg, lidForPrinting, type CaseParts } from './lib/caseGeometry';
 import { download, geometryToStl, layoutOnBed } from './lib/exportStl';
 import { cachedLookups, lookupBoard, lookupStatus, type LookupEvent, type LookupStatus } from './lib/lookupClient';
 import { DEFAULT_SETTINGS, type CaseSettings, type Device } from './types';
@@ -27,6 +27,7 @@ export default function App() {
     exploded: true,
     dimensions: true,
     xray: false,
+    fitCheck: false,
   });
   const fileInput = useRef<HTMLInputElement>(null);
   const [kernelReady, setKernelReady] = useState(false);
@@ -105,6 +106,16 @@ export default function App() {
     return () => clearTimeout(t);
   }, [device, settings, kernelReady]);
 
+  // Only build the fit-check plate while it's shown; downloads build it on demand.
+  const fitCheck = useMemo(() => {
+    if (!kernelReady || !view.fitCheck) return null;
+    try {
+      return buildFitCheck(device);
+    } catch {
+      return null;
+    }
+  }, [device, kernelReady, view.fitCheck]);
+
   const edited = useMemo(() => JSON.stringify(device) !== JSON.stringify(baseline), [device, baseline]);
 
   const selectDevice = (d: Device) => {
@@ -114,7 +125,11 @@ export default function App() {
 
   const slug = device.id || 'case';
 
-  const exportPart = (which: 'base' | 'lid' | 'actuators' | 'stand' | 'all') => {
+  const exportPart = (which: 'base' | 'lid' | 'actuators' | 'stand' | 'fit' | 'all') => {
+    if (which === 'fit') {
+      download(`${slug}-fit-check.stl`, geometryToStl(buildFitCheck(device)));
+      return;
+    }
     if (!parts) return;
     const lid = lidForPrinting(parts.lid);
     const small = parts.actuators.map((a) => a.print);
@@ -197,7 +212,7 @@ export default function App() {
 
   // While placing, show just the board so nothing blocks the click.
   const shownView: ViewOptions = placing
-    ? { board: true, base: false, lid: false, exploded: false, xray: false, dimensions: false }
+    ? { board: true, base: false, lid: false, exploded: false, xray: false, dimensions: false, fitCheck: false }
     : view;
   const placingLabel = placing
     ? placing.kind === 'hole'
@@ -249,6 +264,7 @@ export default function App() {
                 ['exploded', 'Exploded'],
                 ['xray', 'X-ray'],
                 ['dimensions', 'Dimensions'],
+                ['fitCheck', 'Fit check'],
               ] as [keyof ViewOptions, string][]
             ).map(([k, label]) => (
               <button key={k} className={`toggle ${view[k] ? 'on' : ''}`} onClick={() => toggle(k)} aria-pressed={view[k]}>
@@ -274,6 +290,13 @@ export default function App() {
             {parts && parts.extras.length > 0 && (
               <button onClick={() => exportPart('stand')}>Stand</button>
             )}
+            <button
+              disabled={!kernelReady}
+              onClick={() => exportPart('fit')}
+              title="A 1.2 mm plate with a hole at every part. Print it first and lay it on your board to check positions."
+            >
+              Fit check
+            </button>
             <button onClick={exportJson}>Save spec</button>
             <button onClick={() => fileInput.current?.click()}>Load spec</button>
             <input
@@ -297,6 +320,7 @@ export default function App() {
           reference={placing || !view.lid || !view.base ? reference : null}
           camera={camera}
           onPick={placing ? pick : null}
+          fitCheck={fitCheck}
         />
         <div className="view-presets">
           <button onClick={() => moveCamera('top')} title="Look at the top (front) of the board">Top</button>

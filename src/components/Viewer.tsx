@@ -13,6 +13,7 @@ export interface ViewOptions {
   exploded: boolean;
   dimensions: boolean;
   xray: boolean;
+  fitCheck: boolean;
 }
 
 /** A photo of the real board, laid on the PCB so parts can be placed against it. */
@@ -35,6 +36,8 @@ interface Props {
   reference?: ReferenceImage | null;
   /** Bump `n` to move the camera to `preset`. */
   camera?: { preset: CameraPreset; n: number };
+  /** Fit-check plate, drawn floating above the board when view.fitCheck is on. */
+  fitCheck?: THREE.BufferGeometry | null;
   /** When set, clicking the board reports the point in board coordinates. */
   onPick?: ((x: number, y: number) => void) | null;
 }
@@ -51,7 +54,7 @@ interface SceneRefs {
   textures: Map<string, THREE.Texture>;
 }
 
-export function Viewer({ device, parts, view, highlight, reference, camera: cameraCmd, onPick }: Props) {
+export function Viewer({ device, parts, view, highlight, reference, camera: cameraCmd, onPick, fitCheck }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const refs = useRef<SceneRefs | null>(null);
   const pickRef = useRef(onPick);
@@ -214,6 +217,15 @@ export function Viewer({ device, parts, view, highlight, reference, camera: came
     }
 
     r.board = null;
+    if (view.fitCheck && fitCheck && parts.deviceId === device.id) {
+      const plate = new THREE.Mesh(
+        fitCheck,
+        new THREE.MeshStandardMaterial({ color: '#c084fc', roughness: 0.6, transparent: true, opacity: 0.9 }),
+      );
+      plate.position.set(L.boardOrigin.x, L.boardOrigin.y, L.boardTopZ + device.board.heightAbove + 4 + lift * 0.45);
+      content.add(plate);
+    }
+
     const extraMat = new THREE.MeshStandardMaterial({ color: '#2dd4bf', roughness: 0.5 });
     if (view.base) {
       for (const e of parts.extras) {
@@ -268,7 +280,7 @@ export function Viewer({ device, parts, view, highlight, reference, camera: came
       r.camera.position.copy(dir.multiplyScalar(dist)).add(r.controls.target);
       r.controls.update();
     }
-  }, [device, parts, view, highlight, reference]);
+  }, [device, parts, view, highlight, reference, fitCheck]);
 
   // Camera presets (top / bottom / 3D)
   useEffect(() => {

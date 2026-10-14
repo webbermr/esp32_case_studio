@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { DEVICES, customDevice } from '../data/devices';
 import { DEFAULT_SETTINGS } from '../types';
-import { buildCase, computeLayout, initCsg, lidForPrinting } from './caseGeometry';
+import { buildCase, buildFitCheck, computeLayout, FIT_CHECK_THICKNESS, initCsg, lidForPrinting } from './caseGeometry';
 import { geometryToStl, layoutOnBed } from './exportStl';
 
 /** Count edges not shared by exactly two triangles (0 for a closed mesh). */
@@ -135,6 +135,28 @@ describe('buildCase', () => {
     const off = { ...pico, features: pico.features.map((f) => ({ ...f, actuator: false })) };
     expect(buildCase(off, DEFAULT_SETTINGS).actuators).toEqual([]);
   });
+
+  for (const d of DEVICES) {
+    it(`builds a fit-check plate for ${d.name}`, () => {
+      const g = buildFitCheck(d);
+      expect(openEdges(g)).toBe(0);
+      g.computeBoundingBox();
+      const bb = g.boundingBox!;
+      expect(bb.max.x - bb.min.x).toBeCloseTo(d.board.length, 0);
+      expect(bb.max.z - bb.min.z).toBeCloseTo(FIT_CHECK_THICKNESS, 3);
+      // Every mounting hole is open: a vertex lies on its rim.
+      const p = g.getAttribute('position');
+      for (const h of d.mountingHoles) {
+        let onRim = false;
+        for (let i = 0; i < p.count && !onRim; i++) {
+          onRim = Math.abs(Math.hypot(p.getX(i) - h.x, p.getY(i) - h.y) - h.diameter / 2) < 0.05;
+        }
+        expect(onRim, `hole at ${h.x},${h.y}`).toBe(true);
+      }
+      // Holes and notches take material away.
+      expect(volume(g)).toBeLessThan(d.board.length * d.board.width * FIT_CHECK_THICKNESS);
+    });
+  }
 
   it('keeps the PCB above parts on its underside', () => {
     const d = { ...customDevice(), board: { ...customDevice().board, heightBelow: 9 } };
