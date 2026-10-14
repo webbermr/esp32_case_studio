@@ -34,9 +34,10 @@ Things to know:
 - **Where it runs:** only on the local server (`npm run dev` or `npm run preview`). The key stays in `.env` on your machine and never reaches the browser. On a static deploy the option doesn't appear.
 - **Time and cost:** a lookup takes about 1–3 minutes and costs real API money, since it runs web searches plus two model calls.
 - **Caching:** results go in `lookups/boards.json` (git-ignored). Repeat searches are instant and free, and looked-up boards show up in search next time. Delete an entry from that file to re-research it.
-- **Accuracy:** looked-up boards carry an "AI-researched" warning. The research prompt asks Claude to separate numbers that are dimensioned in a source from ones it estimated, and to leave cut-outs off for undocumented parts. Even so, check the numbers against the linked sources before printing.
+- **CAD files first:** the research looks for the manufacturer's STEP model or Eagle/KiCad board, including in GitHub repos, Git LFS and zip archives. When it finds one, the server downloads it and measures it with the same code as the browser import, so **positions come from the file, not from Claude**. Claude only names the parts ("RESET button (K4)") and says whether the file shows the board from the back. A copy of the file is kept in `lookups/cad/` so you can open the real 3D model with **Load 3D model**.
+- **Without a CAD file:** positions come from datasheets and drawings. Those boards carry an "AI-researched" warning; check them against the linked sources, the fit-check plate or a photo before printing.
 
-The code is in `server/lookup.ts` (prompts, schema, API calls) and `server/plugin.ts` (the `/api/*` endpoints and cache).
+The code is in `server/lookup.ts` (prompts, schemas, API calls), `server/cadFetch.ts` (downloading CAD files) and `server/plugin.ts` (the `/api/*` endpoints and cache).
 
 ## Importing the manufacturer's CAD files (most accurate)
 

@@ -284,6 +284,24 @@ export default function App() {
     }
   };
 
+  /** Show the real 3D model for a looked-up board whose STEP file the server kept. */
+  const loadModel = async () => {
+    const cf = device.cadFile;
+    if (!cf) return;
+    const id = device.id;
+    setImporting({ status: 'Loading the 3D model…' });
+    try {
+      const r = await fetch(`./${cf.path}`);
+      if (!r.ok) throw new Error('The model file is no longer on the local server. Run the lookup again or import the file.');
+      const file = new File([await r.blob()], cf.path.split('/').pop()!);
+      const { mesh } = await importCadFile(file, (status) => setImporting({ status }));
+      if (mesh) setCadModels((all) => ({ ...all, [id]: meshToGeometry(mesh) }));
+      setImporting(null);
+    } catch (e) {
+      setImporting({ status: '', error: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
   const openCadPicker = (mode: 'new' | 'replace') => {
     cadMode.current = mode;
     cadInput.current?.click();
@@ -413,6 +431,8 @@ export default function App() {
           onPlace={startPlacing}
           placing={placing}
           onReplaceFromCad={() => openCadPicker('replace')}
+          onLoadModel={loadModel}
+          hasModel={Boolean(cadModels[device.id])}
         />
       </aside>
 

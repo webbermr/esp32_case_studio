@@ -26,6 +26,8 @@ interface Props {
   onRestoreOriginal: () => void;
   saveNote: string | null;
   onReplaceFromCad: () => void;
+  onLoadModel: () => void;
+  hasModel: boolean;
 }
 
 const SIDES: Side[] = ['left', 'right', 'front', 'back', 'top', 'bottom'];
@@ -59,6 +61,8 @@ export function SpecPanel({
   onRestoreOriginal,
   saveNote,
   onReplaceFromCad,
+  onLoadModel,
+  hasModel,
 }: Props) {
   const [openFeature, setOpenFeature] = useState<string | null>(null);
   const b = device.board;
@@ -89,12 +93,23 @@ export function SpecPanel({
           <span className={`chip chip-${device.category.toLowerCase()}`}>{device.category}</span>
         </div>
         <p className="maker">{device.manufacturer}</p>
-        {device.origin === 'lookup' && (
-          <p className="confidence conf-estimated">
-            Researched by Claude from web sources. Numbers can be wrong: check them against the linked sources and your
-            board before printing.
-          </p>
-        )}
+        {device.origin === 'lookup' &&
+          (device.cadFile ? (
+            <p className="confidence conf-datasheet">
+              Positions measured from the manufacturer's {device.cadFile.format === 'step' ? 'STEP model' : 'PCB file'}
+              ; part names by Claude. Check the names and which side is the front.{' '}
+              {!hasModel && device.cadFile.format === 'step' && (
+                <button className="link-btn" onClick={onLoadModel}>
+                  Load 3D model
+                </button>
+              )}
+            </p>
+          ) : (
+            <p className="confidence conf-estimated">
+              Researched by Claude from web sources. Numbers can be wrong: check them against the linked sources and your
+              board before printing, or import the maker's CAD file (Fix positions).
+            </p>
+          ))}
         <p className={`confidence conf-${device.confidence}`}>{CONFIDENCE_TEXT[device.confidence]}</p>
         {device.notes && <p className="notes">{device.notes}</p>}
         {isSaved && <p className="saved-badge">Your saved version{device.origin === 'lookup' ? ' (checked by you)' : ''}</p>}

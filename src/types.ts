@@ -105,6 +105,8 @@ export interface Device {
   origin?: 'library' | 'lookup' | 'import';
   /** Case settings this board works best with (applied when it's picked). */
   settings?: Partial<CaseSettings>;
+  /** Manufacturer CAD file the positions were measured from (lookups keep a copy on the local server). */
+  cadFile?: { path: string; format: 'step' | 'eagle' | 'kicad'; sourceUrl: string };
 }
 
 export interface CaseSettings {

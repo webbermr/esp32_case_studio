@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { Connect, Plugin } from 'vite';
 import type { Device } from '../src/types';
+import { CAD_DIR } from './cadFetch';
 import { describeError, lookupBoard, lookupEnabled, type LookupEvent } from './lookup';
 
 /*
@@ -75,6 +76,17 @@ const api: Connect.NextHandleFunction = async (req, res, next) => {
   try {
     if (req.method === 'GET' && url === '/api/status') {
       return json(res, 200, { lookup: lookupEnabled() });
+    }
+    if (req.method === 'GET' && url?.startsWith('/api/cad/')) {
+      const name = url.slice('/api/cad/'.length);
+      if (!/^[0-9a-f]{16}\.(step|brd|kicad_pcb)$/.test(name)) return json(res, 400, { error: 'Bad file name' });
+      try {
+        const data = await readFile(path.join(CAD_DIR, name));
+        res.setHeader('Content-Type', 'application/octet-stream');
+        return res.end(data);
+      } catch {
+        return json(res, 404, { error: 'Not found' });
+      }
     }
     if (url === '/api/saved' && req.method === 'GET') {
       return json(res, 200, await readSaved());

@@ -1,18 +1,23 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import * as z from 'zod/v4';
+import { cadToDevice } from '../src/cad/toDevice';
+import { turnOver } from '../src/lib/transform';
 import type { Device } from '../src/types';
+import { fetchCad, parseCad, storeCad, type FetchedCad } from './cadFetch';
 
 /*
- * Board lookup: two Claude calls.
+ * Board lookup.
  *
  * 1. Research: Claude uses web search/fetch to find the manufacturer's
- *    datasheet / mechanical drawing and writes up notes with sources.
- * 2. Extraction: the notes are turned into a Device via structured outputs,
- *    so the result always matches the app's schema.
+ *    datasheet, mechanical drawing and CAD files, and writes up notes.
+ * 2. Extraction: the notes are turned into a Device via structured outputs.
+ * 3. CAD (when the manufacturer publishes a STEP model or Eagle/KiCad board):
+ *    the file is downloaded and measured with the same code as the browser
+ *    import, so positions are exact. Claude only names the parts it found and
+ *    says whether the file is drawn from the back.
  *
- * Splitting them keeps the schema step cheap to retry and avoids mixing web
- * citations with JSON output.
+ * Without a usable CAD file the result of step 2 is used as before.
  */
 
 const MODEL = 'claude-opus-5-5';
@@ -76,6 +81,27 @@ export const BoardSchema = z.object({
   sources: z.array(z.object({ label: z.string(), url: z.string() })),
   confidence: z.enum(['datasheet', 'partial', 'estimated']),
   notes: z.string(),
+  cadFiles: z
+    .array(
+      z.object({
+        url: z.string(),
+        format: z.enum(['step', 'eagle', 'kicad', 'zip']),
+        description: z.string(),
+      }),
+    )
+    .describe('Direct links to manufacturer CAD files from the notes, most useful first'),
+});
+
+export const LabelSchema = z.object({
+  turnOver: z.boolean().describe('true if the CAD file shows the board from its back (e.g. a display module whose PCB file is drawn from the component side)'),
+  reason: z.string(),
+  parts: z.array(
+    z.object({
+      index: z.number(),
+      label: z.string().describe('What the part is, e.g. "RESET button (K4)", "USB-C (programming)"'),
+      cutout: z.boolean().describe('Should the case have an opening for it?'),
+    }),
+  ),
 });
 
 const RESEARCH_SYSTEM = `You research the mechanical specifications of electronics dev boards (ESP32, LoRa, RP2040, Arduino and similar) so someone can 3D-print an enclosure.
@@ -92,6 +118,8 @@ Report, in millimetres (convert inches and say you did):
 - Whether pin headers ship soldered
 
 Be strict about provenance. For every number say whether it is dimensioned in a source, read off a drawing image, or estimated. Never invent a number or URL. If something isn't published, say "not found". If the query is ambiguous between board revisions, pick the most common current revision and name it.
+
+CAD files matter most: look hard for the manufacturer's STEP/STP 3D model and the PCB design (Eagle .brd, KiCad .kicad_pcb), usually in the official GitHub hardware repo, a "3D file" or "hardware" folder, or the downloads section. Report the DIRECT file URL for each (a github.com/…/blob/… link is fine; a folder link is not). Zip archives containing them are OK. Say which board revision each file is for.
 
 Finish with a compact plain-text report and the list of source URLs you actually used.`;
 
@@ -114,6 +142,7 @@ Coordinate system (all mm). Lay the board flat with its FRONT face up: the displ
 - specs: short label/value pairs (MCU, radio, USB, buttons, antenna, battery, display...).
 - sources: only URLs that appear in the notes.
 - confidence: "datasheet" if outline and holes come from a manufacturer drawing, "partial" if the outline is from the manufacturer but parts are estimated, "estimated" otherwise.
+- cadFiles: every direct STEP / Eagle / KiCad / zip file URL in the notes, best first (STEP model of the right revision first). Empty if none.
 - If the notes say no matching board was found, set found=false, explain why in notFoundReason, and fill the other fields with empty strings, zeros and empty arrays.`;
 
 /** Turn SDK errors into messages a user can act on. */
@@ -206,7 +235,125 @@ export async function lookupBoard(query: string, emit: (e: LookupEvent) => void,
   if (!out) throw new Error('Could not turn the research into a board spec. Try again.');
   if (!out.found) throw new Error(out.notFoundReason || `No board matching "${query}" was found.`);
 
-  return toDevice(query, out);
+  const research = toDevice(query, out);
+
+  // ---- 3. Exact positions from the manufacturer's CAD file, when there is one
+  const rank = (f: { format: string }) => ({ step: 0, eagle: 1, kicad: 2, zip: 3 })[f.format] ?? 9;
+  const files = [...out.cadFiles].filter((f) => /^https?:\/\//.test(f.url)).sort((a, b) => rank(a) - rank(b));
+  for (const file of files.slice(0, 4)) {
+    let fetched: FetchedCad | null = null;
+    try {
+      emit({ type: 'status', message: `Downloading ${file.format.toUpperCase()} file…` });
+      emit({ type: 'fetch', url: file.url });
+      fetched = await fetchCad(file.url, signal);
+      if (!fetched) continue;
+      emit({
+        type: 'status',
+        message: fetched.format === 'step' ? 'Measuring the 3D model (can take a minute)…' : 'Reading the PCB file…',
+      });
+      const cad = await parseCad(fetched);
+      const cadDevice = cadToDevice(cad, {
+        name: research.name,
+        manufacturer: research.manufacturer,
+        sourceLabel: fetched.fileName,
+        sourceUrl: file.url,
+      });
+      if (!cadDevice.features.length) continue;
+      emit({ type: 'status', message: 'Naming the parts…' });
+      const labels = await labelParts(client, notes, cadDevice, signal);
+      const stored = await storeCad(fetched).catch(() => null);
+      return composeLookupDevice(research, cadDevice, labels, stored ? { path: `api/cad/${stored}`, format: fetched.format, sourceUrl: file.url } : undefined);
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      console.warn('[lookup] CAD file failed', file.url, e);
+      emit({ type: 'status', message: `Couldn't use ${fetched?.fileName ?? 'that file'}; trying the next source…` });
+    }
+  }
+  if (files.length) emit({ type: 'status', message: 'No usable CAD file; using the researched positions.' });
+  return research;
+}
+
+const LABEL_SYSTEM = `You name the parts found in a manufacturer CAD file for an enclosure generator. Positions are exact; don't change them.
+
+You get research notes about the board and a numbered list of parts with their designator/package, kind, position (mm from the bottom-left corner of the board as drawn, x along the length, y along the width), which face they are on, and which case face they will be reached through.
+
+For each part give a short, specific label a maker would recognise ("RESET button (K4)", "BOOT button", "USB-C (UART / programming)", "Battery JST-PH", "POWER switch") using the notes, designators and positions. If you can't tell, use a plain label with the designator.
+
+cutout: true for things a user plugs into, presses or slides from outside (USB ports, buttons, switches, SD slots, edge antenna connectors, displays); false for internal connectors, modules, LEDs and headers unless the notes say they are meant to be reached.
+
+turnOver: PCB files (Eagle/KiCad) are drawn from the component side. If the board's front is the other side (e.g. a display module: the display is on the side without components), answer true. For STEP models the front was already chosen as the display side or the side with more parts; answer true only if the notes clearly contradict it.`;
+
+async function labelParts(client: Anthropic, notes: string, d: Device, signal?: AbortSignal) {
+  const list = d.features
+    .map(
+      (f, i) =>
+        `${i}. ${f.kind} "${f.label}" ${f.note ?? ''} at x=${f.x.toFixed(1)}, y=${f.y.toFixed(1)}, ${f.z >= -d.board.thickness / 2 ? 'front' : 'back'} face, reached through: ${f.side}`,
+    )
+    .join('\n');
+  const res = await client.beta.messages.parse(
+    {
+      model: MODEL,
+      max_tokens: 8000,
+      betas: BETAS,
+      fallbacks: 'default',
+      output_config: { effort: 'low', format: betaZodOutputFormat(LabelSchema) },
+      system: LABEL_SYSTEM,
+      messages: [
+        {
+          role: 'user',
+          content: `Board: ${d.name} (${d.board.length} × ${d.board.width} mm)\n\n<research_notes>\n${notes}\n</research_notes>\n\n<parts>\n${list}\n</parts>`,
+        },
+      ],
+    },
+    { signal },
+  );
+  return res.parsed_output ?? { turnOver: false, reason: '', parts: [] };
+}
+
+/**
+ * Combine exact CAD positions with Claude's labels and the researched identity
+ * (name, specs, sources). Parts the CAD file doesn't contain (e.g. a display
+ * that isn't in a PCB file) are taken from the research, marked as such.
+ */
+export function composeLookupDevice(
+  research: Device,
+  cadDevice: Device,
+  labels: z.infer<typeof LabelSchema>,
+  cadFile?: Device['cadFile'],
+): Device {
+  let d: Device = {
+    ...cadDevice,
+    features: cadDevice.features.map((f, i) => {
+      const l = labels.parts.find((p) => p.index === i);
+      return l ? { ...f, label: l.label || f.label, cutout: l.cutout } : f;
+    }),
+  };
+  if (labels.turnOver) d = turnOver(d);
+  const kinds = new Set(d.features.map((f) => f.kind));
+  const missing = research.features
+    .filter((f) => !kinds.has(f.kind) && f.kind !== 'other')
+    .map((f) => ({ ...f, id: `r-${f.id}`, note: `Position from web research (not in the CAD file). ${f.note ?? ''}`.trim() }));
+  const format = cadFile?.format ?? 'step';
+  const fileLabel = { step: 'STEP model', eagle: 'Eagle board', kicad: 'KiCad board' }[format];
+  return {
+    ...d,
+    id: research.id,
+    name: research.name,
+    manufacturer: research.manufacturer,
+    category: research.category,
+    aliases: research.aliases,
+    tags: research.tags,
+    specs: { ...research.specs, 'Positions from': `Manufacturer ${fileLabel}` },
+    features: [...d.features, ...missing],
+    sources: [...research.sources, ...(cadFile ? [{ label: `${fileLabel} (CAD)`, url: cadFile.sourceUrl }] : [])],
+    confidence: 'datasheet',
+    origin: 'lookup',
+    cadFile,
+    notes:
+      `Positions measured from the manufacturer's ${fileLabel}${labels.turnOver ? ' (turned over: the file shows the back)' : ''}; part names by Claude. ` +
+      (missing.length ? `${missing.length} part(s) not in the file were placed from web research. ` : '') +
+      (cadDevice.notes ?? ''),
+  };
 }
 
 export function toDevice(query: string, b: z.infer<typeof BoardSchema>): Device {
