@@ -38,6 +38,25 @@ Things to know:
 
 The code is in `server/lookup.ts` (prompts, schema, API calls) and `server/plugin.ts` (the `/api/*` endpoints and cache).
 
+## Importing the manufacturer's CAD files (most accurate)
+
+Most manufacturers publish a 3D model (STEP) or the PCB design (Eagle `.brd`, KiCad `.kicad_pcb`), often in the board's GitHub repo. These hold the exact position of every part, so importing one is the most reliable way to get buttons and ports in the right place.
+
+- **New board from a file:** open the search box and choose **Import the maker's CAD file**.
+- **Fix an existing board:** use **Fix positions → Positions from CAD file**. It takes the positions from the file but keeps the board's name, specs, your part labels and any parts the file doesn't contain (such as a display). The import is flipped or rotated automatically to match the existing layout, because PCB files are drawn from the component side.
+
+What each format gives you:
+
+| | STEP model | Eagle / KiCad |
+| --- | --- | --- |
+| Outline, mounting holes | ✓ (round holes found in the PCB) | ✓ |
+| Part positions | ✓ exact | ✓ exact, plus designators (K3, SW1...) |
+| Part sizes and heights | ✓ from the 3D model | footprint size; heights are typical values |
+| Slide-switch lever size | ✓ measured | typical values |
+| Real 3D model in the viewer | ✓ | — |
+
+STEP files are read in the browser by [occt-import-js](https://github.com/kovacsv/occt-import-js), which is OpenCascade compiled to WebAssembly and licensed LGPL-2.1. Large models take up to a minute. Parts are recognised from their names (USB-C, SW-…, KEY-…, TF-…, LED…). Unrecognised parts only count toward clearance heights. Rename anything in the parts list, and check which side is the front.
+
 ## Fixing part positions
 
 Looked-up boards (and estimated library entries) can have parts in the wrong place. Mirrored layouts are the most common problem, especially on display modules, where nearly everything sits on the back. The **Fix positions** section in the left panel has three tools:

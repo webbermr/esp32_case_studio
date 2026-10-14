@@ -10,9 +10,10 @@ interface Props {
   onCustom: () => void;
   onLookup: (query: string) => void;
   lookupStatus: LookupStatus;
+  onImport: () => void;
 }
 
-export function SearchBox({ devices, selectedId, onSelect, onCustom, onLookup: lookup, lookupStatus }: Props) {
+export function SearchBox({ devices, selectedId, onSelect, onCustom, onLookup: lookup, lookupStatus, onImport }: Props) {
   const onLookup = lookupStatus === 'enabled' ? lookup : undefined;
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -106,6 +107,16 @@ export function SearchBox({ devices, selectedId, onSelect, onCustom, onLookup: l
               </span>
             </li>
           )}
+          <li
+            className="custom"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setOpen(false);
+              onImport();
+            }}
+          >
+            ⇪ Import the maker's CAD file (STEP, Eagle .brd, KiCad) for exact positions
+          </li>
           <li
             className="custom"
             onMouseDown={(e) => {

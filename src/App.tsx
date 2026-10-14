@@ -8,6 +8,10 @@ import { buildCase, buildFitCheck, initCsg, lidForPrinting, type CaseParts } fro
 import { download, geometryToStl, layoutOnBed } from './lib/exportStl';
 import { cachedLookups, lookupBoard, lookupStatus, type LookupEvent, type LookupStatus } from './lib/lookupClient';
 import { deleteSaved, loadSaved, saveBoard, type SavedBoards } from './lib/savedBoards';
+import * as THREE from 'three';
+import { CAD_ACCEPT, importCadFile } from './cad/importCad';
+import { alignmentMatrix, cadToDevice, mergeCadInto } from './cad/toDevice';
+import type { CadMesh } from './cad/types';
 import { DEFAULT_SETTINGS, type CaseSettings, type Device } from './types';
 
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -21,6 +25,11 @@ export default function App() {
   /** What the current board looked like when picked or last saved; edits are measured against it. */
   const [baseline, setBaseline] = useState(() => ({ device: DEVICES[0], settings: { ...DEFAULT_SETTINGS, ...DEVICES[0].settings } }));
   const [saveNote, setSaveNote] = useState<string | null>(null);
+  /** Real 3D models from imported STEP files, per board (this session). */
+  const [cadModels, setCadModels] = useState<Record<string, THREE.BufferGeometry>>({});
+  const [importing, setImporting] = useState<{ status: string; error?: string } | null>(null);
+  const cadInput = useRef<HTMLInputElement>(null);
+  const cadMode = useRef<'new' | 'replace'>('new');
   const [parts, setParts] = useState<CaseParts | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
@@ -33,6 +42,7 @@ export default function App() {
     dimensions: true,
     xray: false,
     fitCheck: false,
+    model: true,
   });
   const fileInput = useRef<HTMLInputElement>(null);
   const [kernelReady, setKernelReady] = useState(false);
@@ -227,6 +237,58 @@ export default function App() {
     }
   };
 
+  const meshToGeometry = (m: CadMesh) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(m.colors, 3));
+    g.setIndex(new THREE.BufferAttribute(m.indices, 1));
+    g.computeVertexNormals();
+    return g;
+  };
+
+  const importCad = async (file: File, mode: 'new' | 'replace') => {
+    setImporting({ status: `Reading ${file.name}…` });
+    try {
+      const { cad, mesh } = await importCadFile(file, (status) => setImporting({ status }));
+      const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+      const imported = cadToDevice(cad, { name, sourceLabel: file.name });
+      const merged = mode === 'replace' ? mergeCadInto(device, imported, cad.source) : null;
+      const target = merged?.device ?? imported;
+      if (mode === 'new') {
+        setLibrary((lib) => [imported, ...lib.filter((x) => x.id !== imported.id)]);
+        pickBoard(imported, null);
+      } else {
+        setDevice(target);
+      }
+      if (mesh) {
+        const g = meshToGeometry(mesh);
+        if (merged && merged.alignment !== 'none') {
+          const m = new THREE.Matrix4().set(...(alignmentMatrix(merged.alignment, cad.length, cad.width, cad.thickness) as Parameters<THREE.Matrix4['set']>));
+          g.applyMatrix4(m);
+          // Turning over mirrors the triangles' winding; flip it back so faces point outward.
+          if (merged.alignment.startsWith('turnOver')) {
+            const idx = g.getIndex()!;
+            for (let i = 0; i < idx.count; i += 3) {
+              const a = idx.getX(i + 1);
+              idx.setX(i + 1, idx.getX(i + 2));
+              idx.setX(i + 2, a);
+            }
+          }
+          g.computeVertexNormals();
+        }
+        setCadModels((all) => ({ ...all, [target.id]: g }));
+      }
+      setImporting(null);
+    } catch (e) {
+      setImporting({ status: '', error: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  const openCadPicker = (mode: 'new' | 'replace') => {
+    cadMode.current = mode;
+    cadInput.current?.click();
+  };
+
   const toggle = (k: keyof ViewOptions) => setView((v) => ({ ...v, [k]: !v[k] }));
 
   const reference = references[device.id] ?? null;
@@ -273,7 +335,7 @@ export default function App() {
 
   // While placing, show just the board so nothing blocks the click.
   const shownView: ViewOptions = placing
-    ? { board: true, base: false, lid: false, exploded: false, xray: false, dimensions: false, fitCheck: false }
+    ? { board: true, base: false, lid: false, exploded: false, xray: false, dimensions: false, fitCheck: false, model: view.model }
     : view;
   const placingLabel = placing
     ? placing.kind === 'hole'
@@ -294,10 +356,41 @@ export default function App() {
           selectedId={device.id}
           onSelect={selectDevice}
           onCustom={() => selectDevice(customDevice())}
+          onImport={() => openCadPicker('new')}
           onLookup={runLookup}
           lookupStatus={canLookup}
         />
         {lookup && <LookupProgress lookup={lookup} onCancel={cancelLookup} />}
+        {importing && (
+          <div className={`lookup-panel ${importing.error ? 'failed' : ''}`} role="status">
+            <div className="lookup-head">
+              <span>{importing.error ? 'Import failed' : 'Importing CAD file'}</span>
+              {importing.error && (
+                <button className="link-btn" onClick={() => setImporting(null)}>
+                  Dismiss
+                </button>
+              )}
+            </div>
+            {importing.error ? (
+              <p className="lookup-error">{importing.error}</p>
+            ) : (
+              <ul className="lookup-log">
+                <li>{importing.status}</li>
+              </ul>
+            )}
+          </div>
+        )}
+        <input
+          ref={cadInput}
+          type="file"
+          accept={CAD_ACCEPT}
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) importCad(f, cadMode.current);
+            e.target.value = '';
+          }}
+        />
         <SpecPanel
           device={device}
           settings={settings}
@@ -319,6 +412,7 @@ export default function App() {
           onReference={setReference}
           onPlace={startPlacing}
           placing={placing}
+          onReplaceFromCad={() => openCadPicker('replace')}
         />
       </aside>
 
@@ -334,6 +428,7 @@ export default function App() {
                 ['xray', 'X-ray'],
                 ['dimensions', 'Dimensions'],
                 ['fitCheck', 'Fit check'],
+                ...(cadModels[device.id] ? [['model', '3D model']] : []),
               ] as [keyof ViewOptions, string][]
             ).map(([k, label]) => (
               <button key={k} className={`toggle ${view[k] ? 'on' : ''}`} onClick={() => toggle(k)} aria-pressed={view[k]}>
@@ -390,6 +485,7 @@ export default function App() {
           camera={camera}
           onPick={placing ? pick : null}
           fitCheck={fitCheck}
+          cadModel={cadModels[device.id] ?? null}
         />
         <div className="view-presets">
           <button onClick={() => moveCamera('top')} title="Look at the top (front) of the board">Top</button>

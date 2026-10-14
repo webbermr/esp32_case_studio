@@ -318,7 +318,8 @@ function lateralSize(f: Feature): [number, number] {
 }
 
 export function plungerDims(f: Feature) {
-  const d = f.plungerDiameter ?? Math.min(7, Math.max(3, ...lateralSize(f)));
+  // Size from the button's narrower side: a body measured with its solder legs is longer than the cap.
+  const d = f.plungerDiameter ?? Math.min(7, Math.max(3, 0.8 * Math.min(...lateralSize(f))));
   return { d, need: REST_GAP + COLLAR_FLAT + COLLAR_STEP + TRAVEL_GAP };
 }
 

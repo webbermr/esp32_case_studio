@@ -14,6 +14,8 @@ export interface ViewOptions {
   dimensions: boolean;
   xray: boolean;
   fitCheck: boolean;
+  /** Show the imported 3D model instead of the simple board. */
+  model: boolean;
 }
 
 /** A photo of the real board, laid on the PCB so parts can be placed against it. */
@@ -36,6 +38,8 @@ interface Props {
   reference?: ReferenceImage | null;
   /** Bump `n` to move the camera to `preset`. */
   camera?: { preset: CameraPreset; n: number };
+  /** Imported 3D model of the board (board coordinates). */
+  cadModel?: THREE.BufferGeometry | null;
   /** Fit-check plate, drawn floating above the board when view.fitCheck is on. */
   fitCheck?: THREE.BufferGeometry | null;
   /** When set, clicking the board reports the point in board coordinates. */
@@ -54,7 +58,7 @@ interface SceneRefs {
   textures: Map<string, THREE.Texture>;
 }
 
-export function Viewer({ device, parts, view, highlight, reference, camera: cameraCmd, onPick, fitCheck }: Props) {
+export function Viewer({ device, parts, view, highlight, reference, camera: cameraCmd, onPick, fitCheck, cadModel }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const refs = useRef<SceneRefs | null>(null);
   const pickRef = useRef(onPick);
@@ -236,7 +240,7 @@ export function Viewer({ device, parts, view, highlight, reference, camera: came
     }
 
     if (view.board && parts.deviceId === device.id) {
-      const board = buildBoardModel(device, L.boardOrigin);
+      const board = buildBoardModel(device, L.boardOrigin, view.model ? cadModel : null);
       r.board = board;
       if (reference) board.add(referencePlane(reference, device, r.textures));
       if (view.exploded) board.position.z += lift * 0.45;
@@ -280,7 +284,7 @@ export function Viewer({ device, parts, view, highlight, reference, camera: came
       r.camera.position.copy(dir.multiplyScalar(dist)).add(r.controls.target);
       r.controls.update();
     }
-  }, [device, parts, view, highlight, reference, fitCheck]);
+  }, [device, parts, view, highlight, reference, fitCheck, cadModel]);
 
   // Camera presets (top / bottom / 3D)
   useEffect(() => {
@@ -337,6 +341,7 @@ function referencePlane(ref: ReferenceImage, device: Device, cache: Map<string, 
 
 function hiMat(base: THREE.MeshStandardMaterial) {
   const mat = base.clone();
+  if (mat.transparent) mat.opacity = Math.max(mat.opacity, 0.7);
   mat.emissive.set('#3b82f6');
   mat.emissiveIntensity = 0.9;
   return mat;
@@ -378,7 +383,7 @@ function disposeChildren(group: THREE.Group) {
       if (o instanceof CSS2DObject) o.element.remove();
       const m = o as THREE.Mesh;
       // Case geometries are owned by the parent component; only free what we made here.
-      if (m.isMesh && m.parent?.type === 'Group' && m.parent !== group) m.geometry.dispose();
+      if (m.isMesh && m.parent?.type === 'Group' && m.parent !== group && !m.userData.keepGeometry) m.geometry.dispose();
       if ((o as THREE.LineSegments).isLineSegments || (o as THREE.Line).isLine) (o as THREE.Line).geometry.dispose();
     });
   }

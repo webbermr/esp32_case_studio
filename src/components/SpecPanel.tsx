@@ -25,6 +25,7 @@ interface Props {
   onSave: () => void;
   onRestoreOriginal: () => void;
   saveNote: string | null;
+  onReplaceFromCad: () => void;
 }
 
 const SIDES: Side[] = ['left', 'right', 'front', 'back', 'top', 'bottom'];
@@ -57,6 +58,7 @@ export function SpecPanel({
   onSave,
   onRestoreOriginal,
   saveNote,
+  onReplaceFromCad,
 }: Props) {
   const [openFeature, setOpenFeature] = useState<string | null>(null);
   const b = device.board;
@@ -178,10 +180,19 @@ export function SpecPanel({
       <details open={device.origin === 'lookup'}>
         <summary>Fix positions</summary>
         <p className="help">
-          Parts in the wrong place? A mirrored or rotated layout is the usual cause, especially for parts on the back
-          of the board. Flip the whole layout, or load a photo of your board and click <b>Place</b> on a part to drop it
-          where the photo shows it.
+          Parts in the wrong place? The surest fix is the manufacturer's CAD file (STEP model, Eagle or KiCad board):
+          positions come straight from it. Otherwise flip the whole layout, or load a photo of your board and click{' '}
+          <b>Place</b> on a part to drop it where the photo shows it.
         </p>
+        <div className="tools-row">
+          <button
+            className="tool-btn"
+            onClick={onReplaceFromCad}
+            title="Take exact positions from the manufacturer's STEP, Eagle or KiCad file, keeping this board's name and part labels"
+          >
+            ⇪ Positions from CAD file…
+          </button>
+        </div>
         <div className="tools-row">
           <button className="tool-btn" onClick={() => onDevice(mirrorX(device))} title="Mirror left ↔ right">
             ⇆ Mirror

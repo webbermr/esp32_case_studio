@@ -15,5 +15,6 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), boardLookupApi()],
     base: './',
+    worker: { format: 'es' },
   };
 });
