@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import Module, { type CrossSection, type Manifold, type ManifoldToplevel } from 'manifold-3d';
 import type { CaseSettings, Device, Feature, Side } from '../types';
+import { buildMounts, MOUNT_BOSS } from './mounts';
 
 /** Derived numbers shared by the geometry builder and the spec panel. */
 export interface CaseLayout {
@@ -44,7 +45,9 @@ export function computeLayout(device: Device, s: CaseSettings): CaseLayout {
   const e = boardExtents(device);
   // The PCB must clear anything hanging off its underside, and leave room for
   // the collar of any plunger that presses a button through the floor.
-  let standoff = Math.max(s.standoff, b.heightBelow + 0.5);
+  // Keyhole and kickstand bosses stand up from the floor, so lift the board over them.
+  const floorBoss = s.wallMount === 'keyholes' || s.stand === 'kickstand' ? MOUNT_BOSS : 0;
+  let standoff = Math.max(s.standoff, b.heightBelow + 0.5 + floorBoss);
   for (const f of device.features) {
     if (!usesActuator(f) || f.kind !== 'button' || f.side !== 'bottom') continue;
     const faceBelowPcb = -(f.z - f.size[2] / 2) - b.thickness;
@@ -113,7 +116,7 @@ export const csgReady = () => kernel !== null;
  * Every Manifold/CrossSection is a WASM heap object that must be freed. A Scope
  * tracks what one build allocates and frees it all at the end.
  */
-class Scope {
+export class Scope {
   private owned: { delete(): void }[] = [];
   constructor(readonly k: ManifoldToplevel) {}
   keep<T extends { delete(): void }>(o: T): T {
@@ -146,6 +149,21 @@ class Scope {
       }
     }
     return this.keep(this.k.CrossSection.ofPolygons([pts]));
+  }
+
+  polygon(pts: [number, number][]): CrossSection {
+    // Manifold fills counter-clockwise contours; flip clockwise ones.
+    let area = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const [x0, y0] = pts[i];
+      const [x1, y1] = pts[(i + 1) % pts.length];
+      area += x0 * y1 - x1 * y0;
+    }
+    return this.keep(this.k.CrossSection.ofPolygons([area < 0 ? [...pts].reverse() : pts]));
+  }
+
+  union2d(parts: CrossSection[]): CrossSection {
+    return this.keep(this.k.CrossSection.union(parts));
   }
 
   extrude(cs: CrossSection, z0: number, z1: number): Manifold {
@@ -458,8 +476,19 @@ export interface CaseParts {
   base: THREE.BufferGeometry;
   lid: THREE.BufferGeometry;
   actuators: Actuator[];
+  /** Stands and other loose printed parts. */
+  extras: ExtraPart[];
   warnings: string[];
   layout: CaseLayout;
+}
+
+export interface ExtraPart {
+  id: string;
+  label: string;
+  /** Case coordinates (for the viewer). */
+  geometry: THREE.BufferGeometry;
+  /** Printing orientation (not yet placed on the bed). */
+  print: THREE.BufferGeometry;
 }
 
 export function buildCase(device: Device, s: CaseSettings): CaseParts {
@@ -520,9 +549,11 @@ function buildWith(S: Scope, device: Device, s: CaseSettings): CaseParts {
     supports.push(S.box(s.wall + ledge / 2 - 0.25, cy, (z0 + o.z) / 2, ledge + 0.5, span, h));
     supports.push(S.box(s.wall + L.innerLength - ledge / 2 + 0.25, cy, (z0 + o.z) / 2, ledge + 0.5, span, h));
   }
-  base = S.union([base, ...supports]);
+  const mounts = buildMounts(S, s, L);
+  warnings.push(...mounts.warnings);
+  base = S.union([base, ...supports, ...mounts.adds]);
 
-  const baseCuts = [...holes, ...cut.filter((f) => f.side !== 'top').map(cutterFor)];
+  const baseCuts = [...holes, ...mounts.cuts, ...cut.filter((f) => f.side !== 'top').map(cutterFor)];
   if (baseCuts.length) base = S.sub(base, S.union(baseCuts));
 
   // ---- Lid: plate + locating lip that drops inside the walls
@@ -577,6 +608,7 @@ function buildWith(S: Scope, device: Device, s: CaseSettings): CaseParts {
     base: S.toGeometry(base),
     lid: S.toGeometry(lid),
     actuators,
+    extras: mounts.parts.map((p) => ({ id: p.id, label: p.label, geometry: S.toGeometry(p.part), print: S.toGeometry(p.print) })),
     warnings,
     layout: L,
   };

@@ -488,6 +488,60 @@ export function SpecPanel({
           <NumberField label="Lid vent slots" value={settings.ventSlots} min={0} max={30} step={1} unit="" onChange={(v) => set('ventSlots')(Math.round(v))} />
         </div>
       </details>
+
+      <details open={settings.wallMount !== 'none' || settings.stand !== 'none'}>
+        <summary>Wall mount &amp; stand</summary>
+        <div className="grid2">
+          <label className="sel">
+            <span>Wall mount</span>
+            <select value={settings.wallMount} onChange={(e) => set('wallMount')(e.target.value as CaseSettings['wallMount'])}>
+              <option value="none">none</option>
+              <option value="keyholes">keyhole slots in the back</option>
+              <option value="tabs">screw tabs</option>
+            </select>
+          </label>
+          <label className="sel">
+            <span>Stand</span>
+            <select value={settings.stand} onChange={(e) => set('stand')(e.target.value as CaseSettings['stand'])}>
+              <option value="none">none</option>
+              <option value="tilt-feet">tilt feet (lying flat)</option>
+              <option value="cradle">desk cradle</option>
+              <option value="kickstand">kickstand</option>
+            </select>
+          </label>
+          <label className="sel">
+            <span>Top edge when hung / standing</span>
+            <select value={settings.upEdge} onChange={(e) => set('upEdge')(e.target.value as CaseSettings['upEdge'])}>
+              <option value="back">back (+Y)</option>
+              <option value="front">front (−Y)</option>
+              <option value="left">left (−X)</option>
+              <option value="right">right (+X)</option>
+            </select>
+          </label>
+          {settings.stand !== 'none' && (
+            <NumberField
+              label={settings.stand === 'tilt-feet' ? 'Tilt angle' : 'Lean back'}
+              value={settings.standAngle}
+              min={5}
+              max={45}
+              step={1}
+              unit="°"
+              onChange={set('standAngle')}
+            />
+          )}
+        </div>
+        <p className="help">
+          {settings.wallMount === 'keyholes' &&
+            'Keyholes take pan-head screws up to 4 mm shank / 8 mm head. The board is raised 4.2 mm to clear the bosses inside. '}
+          {settings.wallMount === 'tabs' && 'Tabs take 4 mm countersunk screws. '}
+          {settings.stand === 'tilt-feet' && 'Two wedges peg into holes in the back and raise the top edge. '}
+          {settings.stand === 'cradle' &&
+            'The case stands on its bottom edge in the cradle, leaning back. Ports on the bottom edge will be covered. '}
+          {settings.stand === 'kickstand' &&
+            'The leg pushes into a socket in the back. Stand the case on its bottom edge. '}
+          {settings.wallMount === 'none' && settings.stand === 'none' && 'Add screw holes for hanging, or a printed stand.'}
+        </p>
+      </details>
     </div>
   );
 }

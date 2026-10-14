@@ -125,6 +125,14 @@ export interface CaseSettings {
   /** Pilot-hole diameter in standoffs (e.g. 2.5 for M3 self-tapping, 1.8 for M2). */
   screwHole: number;
   ventSlots: number;
+  /** Wall mounting: keyhole slots in the back, or screw tabs on two edges. */
+  wallMount: 'none' | 'keyholes' | 'tabs';
+  /** Case edge that points up when hung or stood up (the other end rests on the desk). */
+  upEdge: 'back' | 'front' | 'left' | 'right';
+  /** Printed stand: wedge feet for lying flat, a desk cradle, or a clip-in kickstand. */
+  stand: 'none' | 'tilt-feet' | 'cradle' | 'kickstand';
+  /** Stand tilt in degrees (from vertical for cradle/kickstand, from flat for tilt feet). */
+  standAngle: number;
 }
 
 export const DEFAULT_SETTINGS: CaseSettings = {
@@ -141,4 +149,8 @@ export const DEFAULT_SETTINGS: CaseSettings = {
   cutoutMargin: 0.8,
   screwHole: 2.5,
   ventSlots: 0,
+  wallMount: 'none',
+  upEdge: 'back',
+  stand: 'none',
+  standAngle: 20,
 };

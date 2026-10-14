@@ -59,6 +59,18 @@ The parts are included in **Download STL**, or you can download them alone with 
 
 Tips: print the plungers in PETG or PLA at 0.12–0.16 mm layers. The hole leaves 0.3 mm of clearance all round; if a plunger still binds, sand it lightly. If the switch cap is loose on the lever, lower **Lever width/height** by 0.1 mm.
 
+## Wall mounts and stands
+
+Under **Wall mount & stand** in the left panel:
+
+- **Keyhole slots:** two slots in the back (one on narrow cases) for pan-head screws, up to a 4 mm shank and 8 mm head. Bosses inside the back capture the screw head, so the board is lifted 4.2 mm to clear them.
+- **Screw tabs:** flanges on the top and bottom edges with countersunk holes for 4 mm screws.
+- **Tilt feet:** two wedges that peg into holes in the back and tilt a case lying on a desk.
+- **Desk cradle:** the case stands on its bottom edge, leaning back. This covers any ports on that edge.
+- **Kickstand:** a leg that pushes into a socket in the back.
+
+**Top edge when hung / standing** sets which edge points up. The tilt or lean angle is adjustable from 5° to 45°. Stand parts show in teal, are included in **Download STL**, and can be downloaded on their own with **Stand**.
+
 ## How it works
 
 | Piece | File |

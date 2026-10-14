@@ -88,7 +88,7 @@ export default function App() {
         setParts((old) => {
           old?.base.dispose();
           old?.lid.dispose();
-          old?.actuators.forEach((a) => {
+          [...(old?.actuators ?? []), ...(old?.extras ?? [])].forEach((a) => {
             a.geometry.dispose();
             a.print.dispose();
           });
@@ -114,14 +114,16 @@ export default function App() {
 
   const slug = device.id || 'case';
 
-  const exportPart = (which: 'base' | 'lid' | 'actuators' | 'all') => {
+  const exportPart = (which: 'base' | 'lid' | 'actuators' | 'stand' | 'all') => {
     if (!parts) return;
     const lid = lidForPrinting(parts.lid);
     const small = parts.actuators.map((a) => a.print);
+    const stand = parts.extras.map((e) => e.print);
+    if (which === 'stand') download(`${slug}-stand.stl`, geometryToStl(layoutOnBed(stand, 6)));
     if (which === 'base') download(`${slug}-base.stl`, geometryToStl(parts.base));
     if (which === 'lid') download(`${slug}-lid.stl`, geometryToStl(lid));
     if (which === 'actuators') download(`${slug}-buttons.stl`, geometryToStl(layoutOnBed(small, 4)));
-    if (which === 'all') download(`${slug}-plate.stl`, geometryToStl(layoutOnBed([parts.base, lid, ...small])));
+    if (which === 'all') download(`${slug}-plate.stl`, geometryToStl(layoutOnBed([parts.base, lid, ...small, ...stand])));
     lid.dispose();
   };
 
@@ -268,6 +270,9 @@ export default function App() {
               <button onClick={() => exportPart('actuators')} title="Button plungers and switch caps">
                 Buttons ({parts.actuators.length})
               </button>
+            )}
+            {parts && parts.extras.length > 0 && (
+              <button onClick={() => exportPart('stand')}>Stand</button>
             )}
             <button onClick={exportJson}>Save spec</button>
             <button onClick={() => fileInput.current?.click()}>Load spec</button>

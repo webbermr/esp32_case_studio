@@ -214,6 +214,15 @@ export function Viewer({ device, parts, view, highlight, reference, camera: came
     }
 
     r.board = null;
+    const extraMat = new THREE.MeshStandardMaterial({ color: '#2dd4bf', roughness: 0.5 });
+    if (view.base) {
+      for (const e of parts.extras) {
+        const m = new THREE.Mesh(e.geometry, extraMat);
+        m.castShadow = true;
+        content.add(m);
+      }
+    }
+
     if (view.board && parts.deviceId === device.id) {
       const board = buildBoardModel(device, L.boardOrigin);
       r.board = board;
