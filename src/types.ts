@@ -103,6 +103,8 @@ export interface Device {
   notes?: string;
   /** Where the entry came from. Lookups are AI-researched and need checking. */
   origin?: 'library' | 'lookup' | 'import';
+  /** Case settings this board works best with (applied when it's picked). */
+  settings?: Partial<CaseSettings>;
 }
 
 export interface CaseSettings {

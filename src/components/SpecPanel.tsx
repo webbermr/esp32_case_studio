@@ -20,6 +20,11 @@ interface Props {
   onReference: (r: ReferenceImage | null) => void;
   onPlace: (p: { kind: 'feature'; id: string } | { kind: 'hole'; index: number }) => void;
   placing: { kind: 'feature'; id: string } | { kind: 'hole'; index: number } | null;
+  isSaved: boolean;
+  hasOriginal: boolean;
+  onSave: () => void;
+  onRestoreOriginal: () => void;
+  saveNote: string | null;
 }
 
 const SIDES: Side[] = ['left', 'right', 'front', 'back', 'top', 'bottom'];
@@ -47,6 +52,11 @@ export function SpecPanel({
   onReference,
   onPlace,
   placing,
+  isSaved,
+  hasOriginal,
+  onSave,
+  onRestoreOriginal,
+  saveNote,
 }: Props) {
   const [openFeature, setOpenFeature] = useState<string | null>(null);
   const b = device.board;
@@ -69,7 +79,11 @@ export function SpecPanel({
     <div className="spec-panel">
       <section className="device-head">
         <div className="device-title">
-          <h1>{device.name}</h1>
+          {device.id.startsWith('custom') || device.origin === 'import' ? (
+            <input className="name-input" value={device.name} onChange={(e) => onDevice({ ...device, name: e.target.value })} aria-label="Board name" />
+          ) : (
+            <h1>{device.name}</h1>
+          )}
           <span className={`chip chip-${device.category.toLowerCase()}`}>{device.category}</span>
         </div>
         <p className="maker">{device.manufacturer}</p>
@@ -81,11 +95,25 @@ export function SpecPanel({
         )}
         <p className={`confidence conf-${device.confidence}`}>{CONFIDENCE_TEXT[device.confidence]}</p>
         {device.notes && <p className="notes">{device.notes}</p>}
-        {edited && (
-          <button className="link-btn" onClick={onReset}>
-            Revert to library values
-          </button>
-        )}
+        {isSaved && <p className="saved-badge">Your saved version{device.origin === 'lookup' ? ' (checked by you)' : ''}</p>}
+        <div className="save-row">
+          {edited && (
+            <>
+              <button className="save-btn" onClick={onSave}>
+                Save changes
+              </button>
+              <button className="link-btn" onClick={onReset}>
+                Undo changes
+              </button>
+            </>
+          )}
+          {isSaved && hasOriginal && !edited && (
+            <button className="link-btn" onClick={onRestoreOriginal}>
+              Restore original
+            </button>
+          )}
+          {saveNote && <span className="save-note">{saveNote}</span>}
+        </div>
       </section>
 
       {layout && (

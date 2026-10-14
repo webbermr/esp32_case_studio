@@ -48,6 +48,14 @@ Looked-up boards (and estimated library entries) can have parts in the wrong pla
 
 **Top / Bottom / 3D** in the viewer's top-right corner switch camera views at any time.
 
+### Saving your corrections
+
+Change anything (a part position, a size, a case setting) and **Save changes** appears under the board name. Saved boards replace the original in search, so the next time you pick that board you get your version along with its case settings.
+
+- **Where saves go:** with the local server running they go to `lookups/saved.json`, which is git-ignored and shared by every browser on your machine. A copy is also kept in the browser, so a static deploy still remembers them.
+- **Going back:** **Restore original** brings back the library or lookup version.
+- **Custom boards:** saving one gives it its own entry, and you can rename it.
+
 ## Printed buttons and switches
 
 Every button and slide switch with a cut-out gets a small printed part by default. You can turn this off per part in the left panel.

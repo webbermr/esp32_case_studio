@@ -263,3 +263,11 @@ summary .count { color: var(--muted); font-weight: 400; margin-left: 4px; }
 .ref-controls input[type=range] { width: 100%; accent-color: var(--accent-2); }
 .ref-controls select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; color: var(--text); }
 label.tool-btn { display: inline-block; }
+
+.save-row { display: flex; gap: 12px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.save-row .link-btn { margin: 0; }
+.save-btn { background: var(--good); color: #052e16; border: 0; border-radius: 6px; padding: 5px 12px; font-weight: 600; cursor: pointer; }
+.save-btn:hover { filter: brightness(1.1); }
+.save-note { font-size: 12px; color: var(--good); }
+.saved-badge { font-size: 12px; color: #86efac; margin: 4px 0 0; }
+.name-input { font-size: 18px; font-weight: 700; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; width: 100%; color: var(--text); }

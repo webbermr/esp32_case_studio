@@ -16,6 +16,20 @@ import { describeError, lookupBoard, lookupEnabled, type LookupEvent } from './l
 
 const CACHE_DIR = path.resolve('lookups');
 const CACHE_FILE = path.join(CACHE_DIR, 'boards.json');
+const SAVED_FILE = path.join(CACHE_DIR, 'saved.json');
+
+async function readSaved(): Promise<Record<string, unknown>> {
+  try {
+    return JSON.parse(await readFile(SAVED_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+async function writeSaved(all: Record<string, unknown>) {
+  await mkdir(CACHE_DIR, { recursive: true });
+  await writeFile(SAVED_FILE, JSON.stringify(all, null, 2));
+}
 
 interface Cache {
   /** normalised query -> device id */
@@ -44,11 +58,11 @@ function json(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
-async function readBody(req: IncomingMessage): Promise<string> {
+async function readBody(req: IncomingMessage, limit = 10_000): Promise<string> {
   let data = '';
   for await (const chunk of req) {
     data += chunk;
-    if (data.length > 10_000) throw new Error('Request too large');
+    if (data.length > limit) throw new Error('Request too large');
   }
   return data;
 }
@@ -61,6 +75,27 @@ const api: Connect.NextHandleFunction = async (req, res, next) => {
   try {
     if (req.method === 'GET' && url === '/api/status') {
       return json(res, 200, { lookup: lookupEnabled() });
+    }
+    if (url === '/api/saved' && req.method === 'GET') {
+      return json(res, 200, await readSaved());
+    }
+    if (url?.startsWith('/api/saved/')) {
+      const id = decodeURIComponent(url.slice('/api/saved/'.length));
+      if (!/^[\w.-]{1,120}$/.test(id)) return json(res, 400, { error: 'Bad id' });
+      const all = await readSaved();
+      if (req.method === 'PUT') {
+        const body = await readBody(req, 2_000_000);
+        const rec = JSON.parse(body) as { device?: { id?: string } };
+        if (rec?.device?.id !== id) return json(res, 400, { error: 'Board id mismatch' });
+        all[id] = rec;
+        await writeSaved(all);
+        return json(res, 200, { ok: true });
+      }
+      if (req.method === 'DELETE') {
+        delete all[id];
+        await writeSaved(all);
+        return json(res, 200, { ok: true });
+      }
     }
     if (req.method === 'GET' && url === '/api/lookups') {
       const cache = await loadCache();

@@ -498,6 +498,8 @@ export const DEVICES: Device[] = [
       { label: 'STEP model + Eagle files (GitHub)', url: 'https://github.com/Elecrow-RD/CrowPanel-Advanced-10.1inch-ESP32-P4-HMI-AI-Display-1024x600-IPS-Touch-Screen' },
     ],
     confidence: 'datasheet',
+    // Glass sits against the lid.
+    settings: { topClearance: 0.3 },
     notes:
       'Every position is measured from Elecrow\'s STEP model (ESP32-P4-10_1-inch-20251230.stp, board V1.2); button and switch designators from the V1.2 Eagle board file. The optional camera module hangs off the bottom edge on its cable and is not modelled. Plungers and the power-switch cap stick out of the back by ~1.2–2 mm.',
   },

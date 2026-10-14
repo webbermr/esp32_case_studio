@@ -7,15 +7,20 @@ import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { buildCase, buildFitCheck, initCsg, lidForPrinting, type CaseParts } from './lib/caseGeometry';
 import { download, geometryToStl, layoutOnBed } from './lib/exportStl';
 import { cachedLookups, lookupBoard, lookupStatus, type LookupEvent, type LookupStatus } from './lib/lookupClient';
+import { deleteSaved, loadSaved, saveBoard, type SavedBoards } from './lib/savedBoards';
 import { DEFAULT_SETTINGS, type CaseSettings, type Device } from './types';
 
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
 export default function App() {
   const [library, setLibrary] = useState<Device[]>(DEVICES);
-  const [baseline, setBaseline] = useState<Device>(DEVICES[0]);
+  /** Corrected boards (and their case settings) the user saved. */
+  const [saved, setSaved] = useState<SavedBoards>({});
   const [device, setDevice] = useState<Device>(() => clone(DEVICES[0]));
-  const [settings, setSettings] = useState<CaseSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<CaseSettings>(() => ({ ...DEFAULT_SETTINGS, ...DEVICES[0].settings }));
+  /** What the current board looked like when picked or last saved; edits are measured against it. */
+  const [baseline, setBaseline] = useState(() => ({ device: DEVICES[0], settings: { ...DEFAULT_SETTINGS, ...DEVICES[0].settings } }));
+  const [saveNote, setSaveNote] = useState<string | null>(null);
   const [parts, setParts] = useState<CaseParts | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
@@ -116,12 +121,68 @@ export default function App() {
     }
   }, [device, kernelReady, view.fitCheck]);
 
-  const edited = useMemo(() => JSON.stringify(device) !== JSON.stringify(baseline), [device, baseline]);
+  const edited = useMemo(
+    () => JSON.stringify({ device, settings }) !== JSON.stringify(baseline),
+    [device, settings, baseline],
+  );
 
-  const selectDevice = (d: Device) => {
-    setBaseline(d);
-    setDevice(clone(d));
+  // Search shows your saved version of a board in place of the original.
+  const shownLibrary = useMemo(() => {
+    const ids = new Set(library.map((d) => d.id));
+    return [
+      ...Object.values(saved)
+        .filter((r) => !ids.has(r.device.id))
+        .map((r) => r.device),
+      ...library.map((d) => saved[d.id]?.device ?? d),
+    ];
+  }, [library, saved]);
+
+  useEffect(() => {
+    loadSaved().then((all) => {
+      setSaved(all);
+      // If the starting board has a saved version, switch to it.
+      const rec = all[DEVICES[0].id];
+      if (rec) {
+        setDevice(clone(rec.device));
+        setSettings({ ...DEFAULT_SETTINGS, ...rec.settings });
+        setBaseline({ device: rec.device, settings: { ...DEFAULT_SETTINGS, ...rec.settings } });
+      }
+    });
+  }, []);
+
+  const saveCurrent = async () => {
+    let d = device;
+    // A custom board needs its own id so it doesn't overwrite the template.
+    if (d.id === 'custom') d = { ...d, id: `custom-${Date.now().toString(36)}` };
+    const rec = { device: clone(d), settings: clone(settings), savedAt: new Date().toISOString() };
+    const where = await saveBoard(rec);
+    setSaved((all) => ({ ...all, [d.id]: rec }));
+    setDevice(d);
+    setBaseline({ device: rec.device, settings: rec.settings });
+    setSaveNote(where === 'server' ? 'Saved to lookups/saved.json' : 'Saved in this browser');
+    setTimeout(() => setSaveNote(null), 4000);
   };
+
+  const restoreOriginal = async () => {
+    await deleteSaved(device.id);
+    setSaved((all) => {
+      const next = { ...all };
+      delete next[device.id];
+      return next;
+    });
+    const original = library.find((d) => d.id === device.id);
+    if (original) pickBoard(original, null);
+  };
+
+  const pickBoard = (d: Device, rec: SavedBoards[string] | null) => {
+    const base = rec?.device ?? d;
+    const s = { ...DEFAULT_SETTINGS, ...base.settings, ...rec?.settings };
+    setDevice(clone(base));
+    setSettings(s);
+    setBaseline({ device: base, settings: s });
+  };
+
+  const selectDevice = (d: Device) => pickBoard(d, saved[d.id] ?? null);
 
   const slug = device.id || 'case';
 
@@ -229,7 +290,7 @@ export default function App() {
           <span className="sub">enclosures for dev boards</span>
         </header>
         <SearchBox
-          devices={library}
+          devices={shownLibrary}
           selectedId={device.id}
           onSelect={selectDevice}
           onCustom={() => selectDevice(customDevice())}
@@ -244,7 +305,15 @@ export default function App() {
           edited={edited}
           onDevice={setDevice}
           onSettings={setSettings}
-          onReset={() => setDevice(clone(baseline))}
+          onReset={() => {
+            setDevice(clone(baseline.device));
+            setSettings(clone(baseline.settings));
+          }}
+          isSaved={Boolean(saved[device.id])}
+          hasOriginal={library.some((d) => d.id === device.id)}
+          onSave={saveCurrent}
+          onRestoreOriginal={restoreOriginal}
+          saveNote={saveNote}
           onHighlight={setHighlight}
           reference={reference}
           onReference={setReference}
